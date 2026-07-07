@@ -1,6 +1,6 @@
 {
   "name": "ttj-skills-browser",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "TTJ Skills Browser - Playwright CLI with auto-profile management",
   "type": "module",
   "bin": {
