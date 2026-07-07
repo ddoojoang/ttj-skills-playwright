@@ -45,7 +45,7 @@ const notifyUpdate = async (): Promise<void> => {
     const versionInfo = await checkForUpdates();
     if (versionInfo.hasUpdate) {
       log(
-        `새 버전 ${versionInfo.latest}이 있습니다. (현재: ${versionInfo.current}) "npm install -g ttj-browser"로 업데이트하세요.`,
+        `새 버전 ${versionInfo.latest}이 있습니다. (현재: ${versionInfo.current}) "npm install -g ttj-skills-browser@latest"로 업데이트하세요.`,
         'info',
       );
     }
@@ -75,7 +75,10 @@ const main = async (): Promise<void> => {
     'success',
   );
 
-  await notifyUpdate();
+  // 백그라운드에서 업데이트 체크 (메인 기능을 방해하지 않음)
+  notifyUpdate().catch(() => {
+    // 조용히 실패 - 업데이트 체크는 best-effort
+  });
 };
 
 main().catch((error: unknown) => {
