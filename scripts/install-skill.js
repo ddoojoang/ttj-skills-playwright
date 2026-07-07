@@ -4,18 +4,21 @@
  * npm install 후 ~/.claude/skills/에 스킬을 복사합니다
  */
 
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { homedir } from 'os';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const skillName = 'ttj-skills-browser';
 const skillSourceDir = path.join(__dirname, '..', '.claude', 'skills', skillName);
-const skillTargetDir = path.join(os.homedir(), '.claude', 'skills', skillName);
+const skillTargetDir = path.join(homedir(), '.claude', 'skills', skillName);
 const skillFile = 'SKILL.md';
 
 try {
   // ~/.claude/skills 디렉토리 생성
-  const skillsDir = path.join(os.homedir(), '.claude', 'skills');
+  const skillsDir = path.join(homedir(), '.claude', 'skills');
   if (!fs.existsSync(skillsDir)) {
     fs.mkdirSync(skillsDir, { recursive: true });
   }
