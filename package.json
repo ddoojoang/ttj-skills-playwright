@@ -1,10 +1,10 @@
 {
-  "name": "ttj-browser",
+  "name": "ttj-skills-browser",
   "version": "1.0.0",
-  "description": "TTJ Browser - Playwright CLI with auto-profile management",
+  "description": "TTJ Skills Browser - Playwright CLI with auto-profile management",
   "type": "module",
   "bin": {
-    "ttj-browser": "./dist/cli.js"
+    "ttj-skills-browser": "./dist/cli.js"
   },
   "main": "./dist/cli.js",
   "files": [
@@ -32,12 +32,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/username/ttj-browser"
+    "url": "https://github.com/ddoojoang/ttj-skills-browser"
   },
   "bugs": {
-    "url": "https://github.com/username/ttj-browser/issues"
+    "url": "https://github.com/ddoojoang/ttj-skills-browser/issues"
   },
-  "homepage": "https://github.com/username/ttj-browser#readme",
+  "homepage": "https://github.com/ddoojoang/ttj-skills-browser#readme",
   "engines": {
     "node": ">=16.0.0"
   }
