@@ -29,7 +29,7 @@ const notifyUpdate = async () => {
     try {
         const versionInfo = await checkForUpdates();
         if (versionInfo.hasUpdate) {
-            log(`새 버전 ${versionInfo.latest}이 있습니다. (현재: ${versionInfo.current}) "npm install -g ttj-browser"로 업데이트하세요.`, 'info');
+            log(`새 버전 ${versionInfo.latest}이 있습니다. (현재: ${versionInfo.current}) "npm install -g ttj-skills-browser@latest"로 업데이트하세요.`, 'info');
         }
     }
     catch {
@@ -49,7 +49,10 @@ const main = async () => {
     log(`🔌 포트 ${port} 확인 완료`, 'success');
     await launchBrowser({ port, profilePath });
     log('🚀 TTJ 브라우저가 열렸습니다, 작업할 페이지로 이동해서 명령해주세요.', 'success');
-    await notifyUpdate();
+    // 백그라운드에서 업데이트 체크 (메인 기능을 방해하지 않음)
+    notifyUpdate().catch(() => {
+        // 조용히 실패 - 업데이트 체크는 best-effort
+    });
 };
 main().catch((error) => {
     const message = error instanceof Error ? error.message : String(error);

@@ -31,3 +31,15 @@ ttj-skills-browser
 4. 포트 확인 (9227 또는 다음 가능한 포트)
 5. 브라우저 실행
 6. 버전 체크 → 업데이트 알림
+
+## 설치 확인 (빠름 <0.1초)
+```bash
+# 빠른 확인: 설치 플래그 파일 확인
+[ -f ~/.ttj-skills-browser-installed ] && echo "설치됨" || echo "미설치"
+```
+
+## 업데이트 확인
+```bash
+# 최신 버전으로 업데이트
+npm install -g ttj-skills-browser@latest
+```
