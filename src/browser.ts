@@ -21,26 +21,33 @@ const RETRY_MAX_ATTEMPTS = 10;
  * Install playwright-cli globally via npm.
  */
 export const installPlaywrightCli = async (): Promise<void> => {
-  await execCommand('npm install -g playwright-cli');
+  await execCommand('npm install -g @playwright/cli');
 };
 
 /**
- * Build the argument list for launching playwright-cli.
+ * Build the argument list for launching Chrome directly (native flags).
  */
 const buildLaunchArgs = (config: BrowserConfig): string[] => [
-  'open',
-  '--headed',
   `--remote-debugging-port=${config.port}`,
-  `--profile=${config.profilePath}`,
+  `--user-data-dir=${config.profilePath}`,
+  '--no-first-run',
+  '--no-default-browser-check',
   START_URL,
 ];
 
 /**
- * Launch the browser through playwright-cli as a detached child process.
+ * Launch Chrome directly as a detached child process.
+ * Chrome natively supports --remote-debugging-port, so we skip playwright-cli.
  */
-export const launchBrowser = (config: BrowserConfig): Promise<void> =>
-  new Promise((resolve, reject) => {
-    const child = spawn('playwright-cli', buildLaunchArgs(config), {
+export const launchBrowser = async (config: BrowserConfig): Promise<void> => {
+  const chrome = await detectChrome();
+  if (!chrome.found || !chrome.path) {
+    throw new Error('Chrome/Chromium binary not found');
+  }
+
+  const chromePath = chrome.path;
+  return new Promise((resolve, reject) => {
+    const child = spawn(chromePath, buildLaunchArgs(config), {
       stdio: 'ignore',
       detached: true,
     });
@@ -51,6 +58,7 @@ export const launchBrowser = (config: BrowserConfig): Promise<void> =>
       resolve();
     });
   });
+};
 
 /**
  * Compare semantic-ish version strings without mutating inputs.

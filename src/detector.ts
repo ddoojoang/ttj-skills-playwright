@@ -4,7 +4,7 @@
 
 import path from 'path';
 import { mkdir } from 'fs/promises';
-import { getOsType, execCommand } from './utils.js';
+import { getOsType, execCommand, firstExistingPath } from './utils.js';
 import type { DetectionResult, OS } from './types.js';
 
 /**
@@ -66,7 +66,24 @@ const detectChromeLinux = async (): Promise<DetectionResult> => {
 const detectChromeWindows = async (): Promise<DetectionResult> => {
   const chrome = await tryResolve('where chrome.exe');
   const chromium = chrome ? '' : await tryResolve('where chromium.exe');
-  const resolved = chrome || chromium;
+
+  // Chrome 설치 폴더는 보통 PATH에 없어서 `where`가 놓침 — 표준 경로 폴백
+  const fallback =
+    chrome || chromium
+      ? ''
+      : await firstExistingPath([
+          'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+          'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+          path.join(
+            process.env.LOCALAPPDATA ?? '',
+            'Google',
+            'Chrome',
+            'Application',
+            'chrome.exe',
+          ),
+        ]);
+
+  const resolved = chrome || chromium || fallback;
   return resolved ? { found: true, path: resolved } : { found: false };
 };
 

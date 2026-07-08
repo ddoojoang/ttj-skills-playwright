@@ -7,7 +7,7 @@ import net from 'net';
 import https from 'https';
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { readFile } from 'fs/promises';
+import { readFile, access } from 'fs/promises';
 import { fileURLToPath } from 'url';
 const execAsync = promisify(exec);
 const PACKAGE_NAME = 'ttj-browser';
@@ -35,6 +35,22 @@ export const getProfilePath = () => {
     const base = isWindows && appData ? appData : getHomeDir();
     const folderName = isWindows ? 'ttj-skills-browser' : '.ttj-skills-browser';
     return path.join(base, folderName);
+};
+/**
+ * Return the first path in `candidates` that exists on disk, or '' if none do.
+ * Declarative recursion — no loops, no mutation.
+ */
+export const firstExistingPath = async (candidates) => {
+    const [head, ...rest] = candidates;
+    if (!head)
+        return '';
+    try {
+        await access(head);
+        return head;
+    }
+    catch {
+        return firstExistingPath(rest);
+    }
 };
 /**
  * Execute a shell command and return trimmed stdout.

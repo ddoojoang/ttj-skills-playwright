@@ -17,6 +17,11 @@ export declare const getHomeDir: () => string;
  */
 export declare const getProfilePath: () => string;
 /**
+ * Return the first path in `candidates` that exists on disk, or '' if none do.
+ * Declarative recursion — no loops, no mutation.
+ */
+export declare const firstExistingPath: (candidates: string[]) => Promise<string>;
+/**
  * Execute a shell command and return trimmed stdout.
  */
 export declare const execCommand: (cmd: string) => Promise<string>;

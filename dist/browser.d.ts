@@ -7,7 +7,8 @@ import type { BrowserConfig, VersionInfo } from './types.js';
  */
 export declare const installPlaywrightCli: () => Promise<void>;
 /**
- * Launch the browser through playwright-cli as a detached child process.
+ * Launch Chrome directly as a detached child process.
+ * Chrome natively supports --remote-debugging-port, so we skip playwright-cli.
  */
 export declare const launchBrowser: (config: BrowserConfig) => Promise<void>;
 /**
