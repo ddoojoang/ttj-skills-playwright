@@ -14,6 +14,7 @@ import {
   installPlaywrightCli,
   launchBrowser,
   checkForUpdates,
+  verifyBrowserReady,
 } from './browser.js';
 
 const ensurePlaywrightCli = async (): Promise<void> => {
@@ -74,6 +75,17 @@ const main = async (): Promise<void> => {
     '🚀 TTJ 브라우저가 열렸습니다, 작업할 페이지로 이동해서 명령해주세요.',
     'success',
   );
+
+  // 백그라운드에서 브라우저 준비 상태 검증 (메인 플로우를 막지 않음)
+  verifyBrowserReady({ port, profilePath })
+    .then((ready) => {
+      if (ready) {
+        log('✅ 브라우저 준비 상태 검증 완료', 'success');
+      }
+    })
+    .catch(() => {
+      // 조용히 실패 - 검증은 best-effort
+    });
 
   // 백그라운드에서 업데이트 체크 (메인 기능을 방해하지 않음)
   notifyUpdate().catch(() => {

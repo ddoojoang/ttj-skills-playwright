@@ -34,15 +34,15 @@ export const getHomeDir = (): string => os.homedir();
 
 /**
  * Resolve the TTJ browser profile path per platform:
- *  - Windows: %APPDATA%\ttj-browser
- *  - macOS / Linux: ~/.ttj-browser
+ *  - Windows: %APPDATA%\ttj-skills-browser
+ *  - macOS / Linux: ~/.ttj-skills-browser
  */
 export const getProfilePath = (): string => {
   const isWindows = getOsType() === 'windows';
   const appData = process.env.APPDATA;
   const base =
     isWindows && appData ? appData : getHomeDir();
-  const folderName = isWindows ? 'ttj-browser' : '.ttj-browser';
+  const folderName = isWindows ? 'ttj-skills-browser' : '.ttj-skills-browser';
   return path.join(base, folderName);
 };
 

@@ -12,8 +12,8 @@ export declare const getOsType: () => OS;
 export declare const getHomeDir: () => string;
 /**
  * Resolve the TTJ browser profile path per platform:
- *  - Windows: %APPDATA%\ttj-browser
- *  - macOS / Linux: ~/.ttj-browser
+ *  - Windows: %APPDATA%\ttj-skills-browser
+ *  - macOS / Linux: ~/.ttj-skills-browser
  */
 export declare const getProfilePath: () => string;
 /**

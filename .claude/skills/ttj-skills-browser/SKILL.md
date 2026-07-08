@@ -13,7 +13,7 @@ npm 패키지: `npm install -g ttj-skills-browser`
 ## 기능
 - ✅ playwright-cli 자동 설치 확인
 - ✅ Chrome/Chromium 설치 확인
-- ✅ ~/.ttj-browser 프로필 자동 생성
+- ✅ ~/.ttj-skills-browser 프로필 자동 생성
 - ✅ 포트 9227 자동 할당
 - ✅ 브라우저 자동 실행
 - ✅ 버전 자동 체크 및 업데이트 알림

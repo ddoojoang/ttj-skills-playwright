@@ -7,10 +7,15 @@ import {
   execCommand,
   getVersionFromPackageJson,
   getLatestVersionFromNpm,
+  checkPortAvailable,
 } from './utils.js';
+import { detectPlaywrightCli, detectChrome } from './detector.js';
 import type { BrowserConfig, VersionInfo } from './types.js';
 
 const START_URL = 'https://www.google.com';
+
+const RETRY_INTERVAL_MS = 100;
+const RETRY_MAX_ATTEMPTS = 10;
 
 /**
  * Install playwright-cli globally via npm.
@@ -72,4 +77,44 @@ export const checkForUpdates = async (): Promise<VersionInfo> => {
     getLatestVersionFromNpm(),
   ]);
   return { current, latest, hasUpdate: isNewer(latest, current) };
+};
+
+/**
+ * Pause execution for `ms` milliseconds (non-blocking).
+ */
+const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Retry an async boolean check by polling: run `check`, and on a falsy result
+ * wait `RETRY_INTERVAL_MS` and try again, up to `RETRY_MAX_ATTEMPTS` times.
+ * Declarative recursion — no loops, no mutation.
+ */
+const retryCheck = async (
+  check: () => Promise<boolean>,
+  attemptsLeft: number = RETRY_MAX_ATTEMPTS,
+): Promise<boolean> => {
+  const passed = await check();
+  if (passed) return true;
+  if (attemptsLeft <= 1) return false;
+  await sleep(RETRY_INTERVAL_MS);
+  return retryCheck(check, attemptsLeft - 1);
+};
+
+/**
+ * Verify that the browser is ready by polling three signals in parallel:
+ *  - playwright-cli is resolvable
+ *  - Chrome / Chromium is resolvable
+ *  - the debugging port is occupied (browser is listening on it)
+ * Each check retries at 100ms intervals for up to 10 attempts.
+ */
+export const verifyBrowserReady = async (
+  config: BrowserConfig,
+): Promise<boolean> => {
+  const [playwrightReady, chromeReady, portOccupied] = await Promise.all([
+    retryCheck(async () => (await detectPlaywrightCli()).found === true),
+    retryCheck(async () => (await detectChrome()).found === true),
+    retryCheck(async () => (await checkPortAvailable(config.port)) === false),
+  ]);
+  return playwrightReady && chromeReady && portOccupied;
 };
