@@ -46,7 +46,7 @@ const main = async () => {
     await ensureProfile(profilePath);
     log(`📁 브라우저 프로필 생성: ${profilePath}`, 'success');
     const port = await findAvailablePort(9227);
-    log(`🔌 포트 ${port} 확인 완료`, 'success');
+    log(`🔌 CDP 포트 ${port} 열림 (http://localhost:${port}/json/version)`, 'success');
     await launchBrowser({ port, profilePath });
     log('🚀 TTJ 브라우저가 열렸습니다, 작업할 페이지로 이동해서 명령해주세요.', 'success');
     // 백그라운드에서 브라우저 준비 상태 검증 (메인 플로우를 막지 않음)

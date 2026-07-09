@@ -62,6 +62,48 @@ npm run build
 npm start
 ```
 
+## 플랫폼별 설치 및 사용
+
+### Windows
+
+- **최소 버전:** v1.0.8 이상
+- **설치:**
+  ```bash
+  npm install -g ttj-skills-browser@latest
+  ```
+- **프로필 경로:** `C:\Users\<username>\AppData\Roaming\ttj-skills-browser`
+- **설정 확인:**
+  ```powershell
+  dir $env:APPDATA\ttj-skills-browser
+  ```
+
+### macOS / Linux
+
+- **프로필 경로:** `~/.ttj-skills-browser`
+- **설정 확인:**
+  ```bash
+  ls -la ~/.ttj-skills-browser
+  ```
+
+## CDP (Chrome DevTools Protocol) 검증
+
+브라우저 실행 후 CDP가 정상 열렸는지 확인:
+
+```bash
+curl http://localhost:9227/json/version
+```
+
+정상 응답:
+```json
+{
+  "Browser": "Chrome/149.0.7827.199",
+  "Protocol-Version": "1.3",
+  "webSocketDebuggerUrl": "ws://localhost:9227/devtools/browser/..."
+}
+```
+
+응답이 없으면 포트가 폴백되었을 수 있습니다. 브라우저 시작 로그를 확인하세요.
+
 ## 라이선스
 
 MIT

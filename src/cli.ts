@@ -68,7 +68,10 @@ const main = async (): Promise<void> => {
   log(`📁 브라우저 프로필 생성: ${profilePath}`, 'success');
 
   const port = await findAvailablePort(9227);
-  log(`🔌 포트 ${port} 확인 완료`, 'success');
+  log(
+    `🔌 CDP 포트 ${port} 열림 (http://localhost:${port}/json/version)`,
+    'success',
+  );
 
   await launchBrowser({ port, profilePath });
   log(

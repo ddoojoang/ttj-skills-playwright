@@ -10,10 +10,15 @@ allowed-tools: Bash, Read, Write
 npm 패키지: `npm install -g ttj-skills-browser`
 명령: `/TTJ-SKILLS-BROWSER`
 
+> ⚠️ Windows 사용자는 v1.0.8 이상 필수
+> 설치: `npm install -g ttj-skills-browser@latest`
+
 ## 기능
 - ✅ playwright-cli 자동 설치 확인
 - ✅ Chrome/Chromium 설치 확인
-- ✅ ~/.ttj-skills-browser 프로필 자동 생성
+- ✅ 브라우저 프로필 자동 생성
+  - macOS / Linux: `~/.ttj-skills-browser`
+  - Windows: `%APPDATA%\ttj-skills-browser` (예: `C:\Users\<username>\AppData\Roaming\ttj-skills-browser`)
 - ✅ 포트 9227 자동 할당
 - ✅ 브라우저 자동 실행
 - ✅ 버전 자동 체크 및 업데이트 알림
@@ -32,11 +37,56 @@ ttj-skills-browser
 5. 브라우저 실행
 6. 버전 체크 → 업데이트 알림
 
-## 설치 확인 (빠름 <0.1초)
+## 설치 확인
 ```bash
-# 빠른 확인: 설치 플래그 파일 확인
-[ -f ~/.ttj-skills-browser-installed ] && echo "설치됨" || echo "미설치"
+# Mac / Git Bash
+command -v ttj-skills-browser && echo "설치됨" || echo "미설치"
 ```
+
+```powershell
+# Windows PowerShell
+if (Get-Command ttj-skills-browser -ErrorAction SilentlyContinue) { "설치됨" } else { "미설치" }
+```
+
+## 설정 확인 (프로필 폴더 존재 여부)
+
+### Mac / Linux
+```bash
+ls -la ~/.ttj-skills-browser
+```
+
+### Windows PowerShell
+```powershell
+dir $env:APPDATA\ttj-skills-browser
+```
+
+## CDP 포트 검증
+
+브라우저 실행 후 Chrome DevTools Protocol이 열렸는지 확인:
+
+```bash
+curl -s http://localhost:9227/json/version
+```
+
+정상 응답 예:
+```json
+{
+  "Browser": "Chrome/149.0.7827.199",
+  "Protocol-Version": "1.3",
+  "webSocketDebuggerUrl": "ws://localhost:9227/devtools/browser/..."
+}
+```
+
+응답이 없으면:
+1. 브라우저가 실행 중인지 확인
+2. 포트가 폴백되었을 가능성 - 로그에서 실제 포트 확인
+
+## 포트 폴백
+
+포트 9227이 사용 중인 경우:
+- 브라우저는 자동으로 다음 가능한 포트에서 실행됨
+- 실제 포트 확인: 스크립트 실행 후 로그에서 "🔌 CDP 포트 XXXX 열림" 메시지 확인
+- 다른 도구에서 포트를 사용해야 하면 위 메시지의 포트 번호 사용
 
 ## 업데이트 확인
 ```bash
