@@ -5,7 +5,13 @@
 import { log } from './logger.js';
 import { getProfilePath, findAvailablePort } from './utils.js';
 import { detectPlaywrightCli, detectChrome, ensureProfile, } from './detector.js';
-import { installPlaywrightCli, launchBrowser, autoUpdateIfNeeded, verifyBrowserReady, } from './browser.js';
+import { installPlaywrightCli, launchBrowser, autoUpdateIfNeeded, verifyBrowserReady, visualizePageReferences, } from './browser.js';
+/**
+ * Whether the user requested reference visualization.
+ * Triggered by `VISUALIZE=true` env or a `--visualize` / `visualize` CLI arg.
+ */
+const isVisualizeRequested = () => process.env.VISUALIZE === 'true' ||
+    process.argv.slice(2).some((arg) => arg === '--visualize' || arg === 'visualize');
 const ensurePlaywrightCli = async () => {
     const detection = await detectPlaywrightCli();
     if (detection.found) {
@@ -40,6 +46,10 @@ const main = async () => {
     // 최신 버전이 있으면 자동으로 업데이트 (실패해도 현재 버전으로 진행)
     await autoUpdateIfNeeded();
     log('🚀 TTJ 브라우저가 열렸습니다, 작업할 페이지로 이동해서 명령해주세요.', 'success');
+    // 시각화 요청 시: 현재 페이지의 모든 요소에 라벨 오버레이 + 스크린샷
+    if (isVisualizeRequested()) {
+        await visualizePageReferences({ port, profilePath });
+    }
     // 백그라운드에서 브라우저 준비 상태 검증 (메인 플로우를 막지 않음)
     verifyBrowserReady({ port, profilePath })
         .then((ready) => {

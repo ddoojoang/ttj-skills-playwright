@@ -15,7 +15,16 @@ import {
   launchBrowser,
   autoUpdateIfNeeded,
   verifyBrowserReady,
+  visualizePageReferences,
 } from './browser.js';
+
+/**
+ * Whether the user requested reference visualization.
+ * Triggered by `VISUALIZE=true` env or a `--visualize` / `visualize` CLI arg.
+ */
+const isVisualizeRequested = (): boolean =>
+  process.env.VISUALIZE === 'true' ||
+  process.argv.slice(2).some((arg) => arg === '--visualize' || arg === 'visualize');
 
 const ensurePlaywrightCli = async (): Promise<void> => {
   const detection = await detectPlaywrightCli();
@@ -68,6 +77,11 @@ const main = async (): Promise<void> => {
     '🚀 TTJ 브라우저가 열렸습니다, 작업할 페이지로 이동해서 명령해주세요.',
     'success',
   );
+
+  // 시각화 요청 시: 현재 페이지의 모든 요소에 라벨 오버레이 + 스크린샷
+  if (isVisualizeRequested()) {
+    await visualizePageReferences({ port, profilePath });
+  }
 
   // 백그라운드에서 브라우저 준비 상태 검증 (메인 플로우를 막지 않음)
   verifyBrowserReady({ port, profilePath })

@@ -28,4 +28,12 @@ export declare const autoUpdateIfNeeded: () => Promise<void>;
  * Each check retries at 100ms intervals for up to 10 attempts.
  */
 export declare const verifyBrowserReady: (config: BrowserConfig) => Promise<boolean>;
+/**
+ * Visualize every element on the currently open page: inject numbered badges
+ * (e1, e2, ...) + selector labels + click-to-copy, then take a full-page
+ * screenshot. Best-effort — any failure is logged, never thrown.
+ *
+ * Requires an active `playwright-cli` session on the page you want to inspect.
+ */
+export declare const visualizePageReferences: (_config: BrowserConfig) => Promise<void>;
 //# sourceMappingURL=browser.d.ts.map

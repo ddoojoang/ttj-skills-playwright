@@ -26,6 +26,12 @@ export declare const firstExistingPath: (candidates: string[]) => Promise<string
  */
 export declare const execCommand: (cmd: string) => Promise<string>;
 /**
+ * Execute a binary with an explicit argv list (no shell involved).
+ * Safe for passing large / special-character payloads (e.g. injected JS)
+ * as a single argument without any shell-escaping.
+ */
+export declare const execFileCommand: (cmd: string, args: string[]) => Promise<string>;
+/**
  * Read the current version from this package's package.json.
  */
 export declare const getVersionFromPackageJson: () => Promise<string>;
