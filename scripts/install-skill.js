@@ -22,7 +22,7 @@ function ensureDir(dir) {
 }
 
 function toCodexSkill(content) {
-  const codexFrontmatter = `---\nname: ${skillName}\ndescription: TTJ Skills Browser - Playwright CLI with automatic browser profile management and page element visualization.\n---`;
+  const codexFrontmatter = `---\nname: ${skillName}\ndescription: ttj-skills-browser - Playwright CLI with automatic browser profile management and page element visualization.\n---`;
 
   if (content.startsWith('---')) {
     const end = content.indexOf('\n---', 3);
@@ -40,13 +40,13 @@ try {
   if (fs.existsSync(sourceFile)) {
     const sourceContent = fs.readFileSync(sourceFile, 'utf8');
 
-    // Claude Code: 기존 /TTJ-SKILLS-BROWSER 호출 방식 유지
+    // Claude Code: 기존 /ttj-skills-browser 호출 방식 유지
     const claudeTargetDir = path.join(homedir(), '.claude', 'skills', skillName);
     const claudeTargetFile = path.join(claudeTargetDir, skillFile);
     ensureDir(claudeTargetDir);
     fs.copyFileSync(sourceFile, claudeTargetFile);
     console.log(`✅ Claude Code 스킬 설치 완료: ${claudeTargetFile}`);
-    console.log(`   이제 어디서든 /TTJ-SKILLS-BROWSER 스킬을 사용할 수 있습니다!`);
+    console.log(`   이제 어디서든 /ttj-skills-browser 스킬을 사용할 수 있습니다!`);
 
     // Codex: 사용자 전역 스킬 위치에 lower-case kebab-case 이름으로 설치
     const codexTargetDir = path.join(homedir(), '.agents', 'skills', skillName);

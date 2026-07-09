@@ -1,5 +1,5 @@
 /**
- * TTJ Browser - Type definitions
+ * ttj-skills-browser - Type definitions
  */
 
 export type OS = 'macos' | 'linux' | 'windows';

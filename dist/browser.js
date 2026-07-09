@@ -1,5 +1,5 @@
 /**
- * TTJ Browser - Browser manager (install, launch, update check)
+ * ttj-skills-browser - Browser manager (install, launch, update check)
  */
 import { spawn } from 'child_process';
 import { execCommand, execFileCommand, getVersionFromPackageJson, getLatestVersionFromNpm, checkPortAvailable, getOsType, } from './utils.js';
@@ -73,7 +73,7 @@ const detectExistingBrowserWindows = async (expectedProfilePath) => {
     return hit ?? { found: false };
 };
 /**
- * Detect an already-running TTJ browser: a Chrome process that exposes a
+ * Detect an already-running ttj-skills-browser: a Chrome process that exposes a
  * remote-debugging port AND uses our expected profile directory.
  * Fast (single `ps`/CIM call) and best-effort — any error yields { found: false }.
  */

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * TTJ Browser - CLI entry point
+ * ttj-skills-browser - CLI entry point
  */
 
 import { readFileSync } from 'fs';
@@ -97,7 +97,7 @@ const ensureChrome = async (): Promise<boolean> => {
 };
 
 const main = async (): Promise<void> => {
-  log('🚀 TTJ 브라우저를 초기화 중입니다...', 'info');
+  log('🚀 ttj-skills-browser를 초기화 중입니다...', 'info');
 
   // 0. 가장 먼저 업데이트 확인 (브라우저를 열기 전에 최신 버전 보장)
   await autoUpdateIfNeeded();
@@ -138,7 +138,7 @@ const main = async (): Promise<void> => {
   await launchBrowser({ port, profilePath });
 
   log(
-    '🚀 TTJ 브라우저가 열렸습니다, 작업할 페이지로 이동해서 명령해주세요.',
+    '🚀 ttj-skills-browser가 열렸습니다, 작업할 페이지로 이동해서 명령해주세요.',
     'success',
   );
 

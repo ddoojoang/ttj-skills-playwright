@@ -1,8 +1,8 @@
-# TTJ Browser
+# ttj-skills-browser
 
 > Playwright CLI 브라우저를 자동 프로필 관리 및 설치 확인과 함께 실행하는 CLI 도구
 
-TTJ Browser는 `playwright-cli`를 감싸(wrapper) 아래 작업을 자동화합니다.
+ttj-skills-browser는 `playwright-cli`를 감싸(wrapper) 아래 작업을 자동화합니다.
 
 - ✅ `playwright-cli` 설치 여부 자동 확인 및 설치
 - ✅ Chrome / Chromium 설치 여부 확인 (macOS / Linux / Windows)
@@ -28,7 +28,7 @@ npm install -g ttj-skills-browser
 
 | 도구 | 호출 |
 |------|------|
-| Claude Code | `/TTJ-SKILLS-BROWSER` |
+| Claude Code | `/ttj-skills-browser` |
 | Codex | `$ttj-skills-browser` |
 
 ## 사용법

@@ -1,5 +1,5 @@
 /**
- * TTJ Browser - Logging (side-effect isolated)
+ * ttj-skills-browser - Logging (side-effect isolated)
  */
 import chalk from 'chalk';
 const iconMap = {

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * TTJ Browser - CLI entry point
+ * ttj-skills-browser - CLI entry point
  */
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
@@ -70,7 +70,7 @@ const ensureChrome = async () => {
     return true;
 };
 const main = async () => {
-    log('🚀 TTJ 브라우저를 초기화 중입니다...', 'info');
+    log('🚀 ttj-skills-browser를 초기화 중입니다...', 'info');
     // 0. 가장 먼저 업데이트 확인 (브라우저를 열기 전에 최신 버전 보장)
     await autoUpdateIfNeeded();
     const profilePath = getProfilePath();
@@ -98,7 +98,7 @@ const main = async () => {
     const port = await findAvailablePort(9227);
     log(`🔌 CDP 포트 ${port} 열림 (http://localhost:${port}/json/version)`, 'success');
     await launchBrowser({ port, profilePath });
-    log('🚀 TTJ 브라우저가 열렸습니다, 작업할 페이지로 이동해서 명령해주세요.', 'success');
+    log('🚀 ttj-skills-browser가 열렸습니다, 작업할 페이지로 이동해서 명령해주세요.', 'success');
     // 시각화 요청 시: 현재 페이지의 모든 요소에 라벨 오버레이 + 스크린샷
     if (isVisualizeRequested()) {
         await visualizePageReferences({ port, profilePath });

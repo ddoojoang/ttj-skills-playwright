@@ -1,5 +1,5 @@
 /**
- * TTJ Browser - Utility functions (pure where possible)
+ * ttj-skills-browser - Utility functions (pure where possible)
  */
 import os from 'os';
 import path from 'path';
@@ -27,7 +27,7 @@ export const getOsType = () => process.platform === 'win32'
  */
 export const getHomeDir = () => os.homedir();
 /**
- * Resolve the TTJ browser profile path per platform:
+ * Resolve the ttj-skills-browser profile path per platform:
  *  - Windows: %APPDATA%\ttj-skills-browser
  *  - macOS / Linux: ~/.ttj-skills-browser
  */

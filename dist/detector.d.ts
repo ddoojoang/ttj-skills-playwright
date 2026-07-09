@@ -1,5 +1,5 @@
 /**
- * TTJ Browser - Detection logic (playwright-cli, Chrome, profile)
+ * ttj-skills-browser - Detection logic (playwright-cli, Chrome, profile)
  */
 import type { DetectionResult } from './types.js';
 /**

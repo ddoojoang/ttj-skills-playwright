@@ -1,6 +1,6 @@
 ---
-name: TTJ-SKILLS-BROWSER
-description: TTJ Skills Browser - Playwright CLI + 자동 프로필 & 설치 관리 + 페이지 요소 시각화
+name: ttj-skills-browser
+description: ttj-skills-browser - Playwright CLI + 자동 프로필 & 설치 관리 + 페이지 요소 시각화
 disable-model-invocation: false
 allowed-tools: Bash, Read, Write
 auto-invoke-keywords: [
@@ -14,10 +14,10 @@ auto-invoke-keywords: [
 ]
 ---
 
-# TTJ Skills Browser
+# ttj-skills-browser
 
 npm 패키지: `npm install -g ttj-skills-browser`
-명령: `/TTJ-SKILLS-BROWSER`
+명령: `/ttj-skills-browser`
 
 > ⚠️ Windows 사용자는 v1.0.8 이상 필수
 > 설치: `npm install -g ttj-skills-browser@latest`
@@ -79,11 +79,11 @@ npm 패키지: `npm install -g ttj-skills-browser`
 - 화면으로, 그림으로
 - 어떻게 구성돼?, 뭐가 있어?, 어때?
 
-**판단 기준: "대상(요소/구조/HTML/버튼/링크...)" + "요청 표현" 이 둘 다 있을 때만 `/TTJ-SKILLS-BROWSER`를 시각화 모드로 실행합니다.**
+**판단 기준: "대상(요소/구조/HTML/버튼/링크...)" + "요청 표현" 이 둘 다 있을 때만 `/ttj-skills-browser`를 시각화 모드로 실행합니다.**
 
 ### 3️⃣ 명시적 호출
 또는 직접 호출:
-`/TTJ-SKILLS-BROWSER`
+`/ttj-skills-browser`
 
 ### 직접 실행
 ```bash
