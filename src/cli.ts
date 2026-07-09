@@ -3,6 +3,9 @@
  * TTJ Browser - CLI entry point
  */
 
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import path from 'path';
 import { log } from './logger.js';
 import { getProfilePath, findAvailablePort } from './utils.js';
 import {
@@ -19,6 +22,47 @@ import {
   detectExistingBrowser,
   bringWindowToFront,
 } from './browser.js';
+
+/**
+ * Read the package version dynamically from package.json (ESM-safe).
+ */
+const getVersion = (): string => {
+  const currentDir = path.dirname(fileURLToPath(import.meta.url));
+  const packageJson = JSON.parse(
+    readFileSync(path.join(currentDir, '../package.json'), 'utf-8'),
+  ) as { version: string };
+  return packageJson.version;
+};
+
+const HELP_MESSAGE = `
+Usage: ttj-skills-browser [options]
+
+Options:
+  --version, -v    Show version
+  --help, -h       Show this help message
+  --visualize      Launch browser and visualize page references
+  (no options)     Launch browser
+
+Examples:
+  $ ttj-skills-browser              # Start browser
+  $ ttj-skills-browser --version    # Check version
+  $ ttj-skills-browser --help       # Show help
+`;
+
+/**
+ * Handle informational CLI flags (--version, --help).
+ * Returns true if a flag was handled and the process should exit early.
+ */
+const handleInfoFlags = (args: readonly string[]): boolean => {
+  const wantsVersion = args.includes('--version') || args.includes('-v');
+  const wantsHelp = args.includes('--help') || args.includes('-h');
+
+  return wantsVersion
+    ? (console.log(`ttj-skills-browser v${getVersion()}`), true)
+    : wantsHelp
+      ? (console.log(HELP_MESSAGE), true)
+      : false;
+};
 
 /**
  * Whether the user requested reference visualization.
@@ -114,6 +158,12 @@ const main = async (): Promise<void> => {
       // 조용히 실패 - 검증은 best-effort
     });
 };
+
+const cliArgs = process.argv.slice(2);
+
+if (handleInfoFlags(cliArgs)) {
+  process.exit(0);
+}
 
 main().catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
