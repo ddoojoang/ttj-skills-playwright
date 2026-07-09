@@ -1,7 +1,7 @@
 ---
 name: TTJ-SKILLS-BROWSER
 description: TTJ Skills Browser - Playwright CLI + 자동 프로필 & 설치 관리
-disable-model-invocation: true
+disable-model-invocation: false
 allowed-tools: Bash, Read, Write
 ---
 
@@ -24,10 +24,31 @@ npm 패키지: `npm install -g ttj-skills-browser`
 - ✅ 버전 자동 체크 및 업데이트 알림
 
 ## 사용 방법
+
+### 자동 호출
+스킬을 명시적으로 호출하지 않아도 됩니다:
+- "ttj 브라우저 열어줘"
+- "브라우저로 작업해줘"
+- "ttj 브라우저가 필요해"
+
+이런 문장에서 Claude가 자동으로 이 스킬을 호출합니다.
+
+### 명시적 호출
+또는 직접 호출:
+`/TTJ-SKILLS-BROWSER`
+
+### 직접 실행
 ```bash
 npm install -g ttj-skills-browser
 ttj-skills-browser
 ```
+
+## 자동 업데이트
+
+스킬 실행 시 최신 버전을 자동으로 확인하고 필요하면 업데이트합니다:
+- 최신 버전이 있으면: "✅ 최신버전이 있어서 업데이트했습니다"
+- 이미 최신이면: 아무 메시지 없이 진행
+- 업데이트 실패해도: 현재 버전으로 계속 사용
 
 ## 실행 흐름
 1. playwright-cli 탐지/설치

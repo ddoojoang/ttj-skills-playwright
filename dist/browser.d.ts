@@ -16,6 +16,11 @@ export declare const launchBrowser: (config: BrowserConfig) => Promise<void>;
  */
 export declare const checkForUpdates: () => Promise<VersionInfo>;
 /**
+ * Auto-update to the latest version when one is available.
+ * Best-effort: any failure is swallowed so the user keeps the current version.
+ */
+export declare const autoUpdateIfNeeded: () => Promise<void>;
+/**
  * Verify that the browser is ready by polling three signals in parallel:
  *  - playwright-cli is resolvable
  *  - Chrome / Chromium is resolvable

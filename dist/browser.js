@@ -4,6 +4,7 @@
 import { spawn } from 'child_process';
 import { execCommand, getVersionFromPackageJson, getLatestVersionFromNpm, checkPortAvailable, } from './utils.js';
 import { detectPlaywrightCli, detectChrome } from './detector.js';
+import { log } from './logger.js';
 const START_URL = 'https://www.google.com';
 const RETRY_INTERVAL_MS = 100;
 const RETRY_MAX_ATTEMPTS = 10;
@@ -68,6 +69,23 @@ export const checkForUpdates = async () => {
         getLatestVersionFromNpm(),
     ]);
     return { current, latest, hasUpdate: isNewer(latest, current) };
+};
+/**
+ * Auto-update to the latest version when one is available.
+ * Best-effort: any failure is swallowed so the user keeps the current version.
+ */
+export const autoUpdateIfNeeded = async () => {
+    try {
+        const versionInfo = await checkForUpdates();
+        if (versionInfo.hasUpdate) {
+            log(`업데이트 중... (${versionInfo.current} → ${versionInfo.latest})`, 'info');
+            await execCommand('npm install -g ttj-skills-browser@latest');
+            log(`✅ 최신버전이 있어서 업데이트했습니다 (${versionInfo.current} → ${versionInfo.latest})`, 'success');
+        }
+    }
+    catch {
+        // Update failure is ignored; the user continues on the current version.
+    }
 };
 /**
  * Pause execution for `ms` milliseconds (non-blocking).

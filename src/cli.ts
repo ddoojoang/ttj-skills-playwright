@@ -13,7 +13,7 @@ import {
 import {
   installPlaywrightCli,
   launchBrowser,
-  checkForUpdates,
+  autoUpdateIfNeeded,
   verifyBrowserReady,
 } from './browser.js';
 
@@ -41,20 +41,6 @@ const ensureChrome = async (): Promise<boolean> => {
   return true;
 };
 
-const notifyUpdate = async (): Promise<void> => {
-  try {
-    const versionInfo = await checkForUpdates();
-    if (versionInfo.hasUpdate) {
-      log(
-        `새 버전 ${versionInfo.latest}이 있습니다. (현재: ${versionInfo.current}) "npm install -g ttj-skills-browser@latest"로 업데이트하세요.`,
-        'info',
-      );
-    }
-  } catch {
-    // Update check is best-effort; ignore network failures gracefully.
-  }
-};
-
 const main = async (): Promise<void> => {
   log('🚀 TTJ 브라우저를 초기화 중입니다...', 'info');
 
@@ -74,6 +60,10 @@ const main = async (): Promise<void> => {
   );
 
   await launchBrowser({ port, profilePath });
+
+  // 최신 버전이 있으면 자동으로 업데이트 (실패해도 현재 버전으로 진행)
+  await autoUpdateIfNeeded();
+
   log(
     '🚀 TTJ 브라우저가 열렸습니다, 작업할 페이지로 이동해서 명령해주세요.',
     'success',
@@ -89,11 +79,6 @@ const main = async (): Promise<void> => {
     .catch(() => {
       // 조용히 실패 - 검증은 best-effort
     });
-
-  // 백그라운드에서 업데이트 체크 (메인 기능을 방해하지 않음)
-  notifyUpdate().catch(() => {
-    // 조용히 실패 - 업데이트 체크는 best-effort
-  });
 };
 
 main().catch((error: unknown) => {

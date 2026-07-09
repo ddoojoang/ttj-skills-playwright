@@ -5,7 +5,7 @@
 import { log } from './logger.js';
 import { getProfilePath, findAvailablePort } from './utils.js';
 import { detectPlaywrightCli, detectChrome, ensureProfile, } from './detector.js';
-import { installPlaywrightCli, launchBrowser, checkForUpdates, verifyBrowserReady, } from './browser.js';
+import { installPlaywrightCli, launchBrowser, autoUpdateIfNeeded, verifyBrowserReady, } from './browser.js';
 const ensurePlaywrightCli = async () => {
     const detection = await detectPlaywrightCli();
     if (detection.found) {
@@ -25,17 +25,6 @@ const ensureChrome = async () => {
     log(`Chrome 확인 완료: ${detection.path}`, 'success');
     return true;
 };
-const notifyUpdate = async () => {
-    try {
-        const versionInfo = await checkForUpdates();
-        if (versionInfo.hasUpdate) {
-            log(`새 버전 ${versionInfo.latest}이 있습니다. (현재: ${versionInfo.current}) "npm install -g ttj-skills-browser@latest"로 업데이트하세요.`, 'info');
-        }
-    }
-    catch {
-        // Update check is best-effort; ignore network failures gracefully.
-    }
-};
 const main = async () => {
     log('🚀 TTJ 브라우저를 초기화 중입니다...', 'info');
     await ensurePlaywrightCli();
@@ -48,6 +37,8 @@ const main = async () => {
     const port = await findAvailablePort(9227);
     log(`🔌 CDP 포트 ${port} 열림 (http://localhost:${port}/json/version)`, 'success');
     await launchBrowser({ port, profilePath });
+    // 최신 버전이 있으면 자동으로 업데이트 (실패해도 현재 버전으로 진행)
+    await autoUpdateIfNeeded();
     log('🚀 TTJ 브라우저가 열렸습니다, 작업할 페이지로 이동해서 명령해주세요.', 'success');
     // 백그라운드에서 브라우저 준비 상태 검증 (메인 플로우를 막지 않음)
     verifyBrowserReady({ port, profilePath })
@@ -58,10 +49,6 @@ const main = async () => {
     })
         .catch(() => {
         // 조용히 실패 - 검증은 best-effort
-    });
-    // 백그라운드에서 업데이트 체크 (메인 기능을 방해하지 않음)
-    notifyUpdate().catch(() => {
-        // 조용히 실패 - 업데이트 체크는 best-effort
     });
 };
 main().catch((error) => {
