@@ -99,6 +99,9 @@ const ensureChrome = async (): Promise<boolean> => {
 const main = async (): Promise<void> => {
   log('🚀 TTJ 브라우저를 초기화 중입니다...', 'info');
 
+  // 0. 가장 먼저 업데이트 확인 (브라우저를 열기 전에 최신 버전 보장)
+  await autoUpdateIfNeeded();
+
   const profilePath = getProfilePath();
 
   // 1. 기존 브라우저 감지 (가장 먼저 - 있으면 재사용해서 빠르게 종료)
@@ -133,9 +136,6 @@ const main = async (): Promise<void> => {
   );
 
   await launchBrowser({ port, profilePath });
-
-  // 최신 버전이 있으면 자동으로 업데이트 (실패해도 현재 버전으로 진행)
-  await autoUpdateIfNeeded();
 
   log(
     '🚀 TTJ 브라우저가 열렸습니다, 작업할 페이지로 이동해서 명령해주세요.',

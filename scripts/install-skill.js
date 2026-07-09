@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Claude Code 스킬 자동 설치
- * npm install 후 ~/.claude/skills/에 스킬을 복사합니다
+ * Claude Code / Codex 스킬 자동 설치
+ * npm install 후 Claude Code와 Codex의 사용자 전역 스킬 위치에 복사합니다.
  */
 
 import fs from 'fs';
@@ -13,29 +13,48 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const skillName = 'ttj-skills-browser';
 const skillSourceDir = path.join(__dirname, '..', '.claude', 'skills', skillName);
-const skillTargetDir = path.join(homedir(), '.claude', 'skills', skillName);
 const skillFile = 'SKILL.md';
 
+function ensureDir(dir) {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+}
+
+function toCodexSkill(content) {
+  const codexFrontmatter = `---\nname: ${skillName}\ndescription: TTJ Skills Browser - Playwright CLI with automatic browser profile management and page element visualization.\n---`;
+
+  if (content.startsWith('---')) {
+    const end = content.indexOf('\n---', 3);
+    if (end !== -1) {
+      return `${codexFrontmatter}${content.slice(end + 4)}`;
+    }
+  }
+
+  return `${codexFrontmatter}\n\n${content}`;
+}
+
 try {
-  // ~/.claude/skills 디렉토리 생성
-  const skillsDir = path.join(homedir(), '.claude', 'skills');
-  if (!fs.existsSync(skillsDir)) {
-    fs.mkdirSync(skillsDir, { recursive: true });
-  }
-
-  // 대상 디렉토리 생성
-  if (!fs.existsSync(skillTargetDir)) {
-    fs.mkdirSync(skillTargetDir, { recursive: true });
-  }
-
-  // SKILL.md 복사
   const sourceFile = path.join(skillSourceDir, skillFile);
-  const targetFile = path.join(skillTargetDir, skillFile);
 
   if (fs.existsSync(sourceFile)) {
-    fs.copyFileSync(sourceFile, targetFile);
-    console.log(`✅ Claude Code 스킬 설치 완료: ${targetFile}`);
+    const sourceContent = fs.readFileSync(sourceFile, 'utf8');
+
+    // Claude Code: 기존 /TTJ-SKILLS-BROWSER 호출 방식 유지
+    const claudeTargetDir = path.join(homedir(), '.claude', 'skills', skillName);
+    const claudeTargetFile = path.join(claudeTargetDir, skillFile);
+    ensureDir(claudeTargetDir);
+    fs.copyFileSync(sourceFile, claudeTargetFile);
+    console.log(`✅ Claude Code 스킬 설치 완료: ${claudeTargetFile}`);
     console.log(`   이제 어디서든 /TTJ-SKILLS-BROWSER 스킬을 사용할 수 있습니다!`);
+
+    // Codex: 사용자 전역 스킬 위치에 lower-case kebab-case 이름으로 설치
+    const codexTargetDir = path.join(homedir(), '.agents', 'skills', skillName);
+    const codexTargetFile = path.join(codexTargetDir, skillFile);
+    ensureDir(codexTargetDir);
+    fs.writeFileSync(codexTargetFile, toCodexSkill(sourceContent));
+    console.log(`✅ Codex 스킬 설치 완료: ${codexTargetFile}`);
+    console.log(`   이제 Codex에서 $${skillName} 스킬을 사용할 수 있습니다!`);
 
     // 설치 완료 플래그 파일 생성 (빠른 확인용)
     const flagFile = path.join(homedir(), '.ttj-skills-browser-installed');

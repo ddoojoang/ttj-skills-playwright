@@ -21,13 +21,20 @@ TTJ Browser는 `playwright-cli`를 감싸(wrapper) 아래 작업을 자동화합
 ## 설치
 
 ```bash
-npm install -g ttj-browser
+npm install -g ttj-skills-browser
 ```
+
+전역 설치 후 에이전트 스킬도 자동 설치됩니다.
+
+| 도구 | 호출 |
+|------|------|
+| Claude Code | `/TTJ-SKILLS-BROWSER` |
+| Codex | `$ttj-skills-browser` |
 
 ## 사용법
 
 ```bash
-ttj-browser
+ttj-skills-browser
 ```
 
 실행하면 다음 순서로 동작합니다.
