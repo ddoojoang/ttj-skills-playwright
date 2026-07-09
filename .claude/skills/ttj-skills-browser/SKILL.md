@@ -122,6 +122,131 @@ ttj-skills-browser --visualize
 
 > ⚠️ 시각화는 `playwright-cli` 활성 세션이 필요합니다. 세션이 없으면 오류를 로깅하고 조용히 넘어갑니다(best-effort).
 
+## 개발 규칙 (자동화 스크립트 작성 시)
+
+사용자가 크롤링, 자동화, DOM 조작을 요청했을 때의 개발 규칙:
+
+### 기본 라이브러리 (언어 미명시 시)
+
+**브라우저 제어**: Puppeteer (기본값)
+- 사용자가 Selenium, Playwright 등 명시 시 그에 따름
+
+**HTTP 요청**: Axios + Cheerio 조합
+- Axios: HTTP 요청 수행
+- Cheerio: HTML 파싱 및 CSS 선택자 크롤링
+
+### 자동화 인간화 (봇 탐지 회피)
+
+**타이핑: 항상 랜덤 간격**
+- 권장: 글자마다 100-300ms 랜덤 지연
+- 목적: 사람처럼 보이기
+
+**크롤링/요소 접근: 항상 랜덤 간격**
+- 권장: 요소마다 500ms-2s 랜덤 대기
+- 목적: 봇 탐지 회피
+
+**구현 예시:**
+```javascript
+// 랜덤 간격 타이핑
+const randomDelay = () => Math.random() * 200 + 100; // 100-300ms
+await page.type(selector, text, { delay: randomDelay() });
+
+// 랜덤 간격 크롤링
+const randomWait = () => Math.random() * 1500 + 500; // 500-2000ms
+await page.waitForTimeout(randomWait());
+```
+
+### OS별 브라우저 감지 & 자동 선택
+
+**규칙:**
+1. 사용자 PC의 OS 자동 감지 (Mac / Windows / Linux)
+2. 해당 OS에 설치된 기본 브라우저 사용
+3. 경로 자동 감지해서 실행
+
+**OS별 브라우저:**
+| OS | 기본 브라우저 |
+|---|---|
+| macOS | Chrome, Safari, Firefox 등 (설치된 것) |
+| Windows | Edge, Chrome, Firefox 등 (설치된 것) |
+| Linux | Chrome, Firefox 등 (설치된 것) |
+
+**사용자가 특정 브라우저 명시하지 않으면 OS 기본값 사용**
+```javascript
+// 예: Puppeteer 자동 브라우저 감지
+const browser = await puppeteer.launch();
+// → OS에 따라 기본 브라우저 자동 선택
+```
+
+## DOM 제어 코드 개발 워크플로우
+
+사용자가 크롤링, 자동화, DOM 조작을 요청했을 때의 개발 절차:
+
+### 규칙 (반드시 준수)
+1. **절대 바로 코드를 작성하지 말 것**
+2. **개발자도구 콘솔에서 먼저 테스트**
+3. **console.log로 결과 확인**
+4. **동작이 검증된 후에만 최종 코드 작성**
+
+### 단계별 프로세스
+
+#### Step 1️⃣: 콘솔에서 코드 테스트
+브라우저의 개발자도구 콘솔에서:
+```javascript
+// 테스트 코드 실행
+document.querySelectorAll('.item').forEach(el => {
+  console.log(el.textContent);
+});
+```
+
+#### Step 2️⃣: 결과 확인
+- 콘솔에 예상한 데이터가 출력되는가?
+- 오류는 없는가?
+- 모든 요소를 정확히 선택했는가?
+
+#### Step 3️⃣: 동작 검증
+- 데이터 형식이 맞는가?
+- 빠진 것은 없는가?
+- 중복이 있는가?
+
+#### Step 4️⃣: 최종 코드 작성
+검증된 코드를 프로덕션 코드에 적용
+
+### 실제 예시
+
+**사용자 요청:** "네이버 검색 결과의 제목과 URL을 크롤링해줄래?"
+
+**AI의 작업 흐름:**
+
+1. 브라우저 개발자도구 열기
+
+2. 콘솔에서 먼저 테스트:
+   ```javascript
+   // 먼저 요소 확인
+   document.querySelectorAll('a.title')
+   // → 10개 항목 반환 ✅
+
+   // 텍스트 추출 테스트
+   const titles = Array.from(document.querySelectorAll('a.title'))
+     .map(a => a.textContent);
+   console.log(titles);
+   // → ["검색결과1", "검색결과2", ...] ✅
+
+   // URL 추출 테스트
+   const urls = Array.from(document.querySelectorAll('a.title'))
+     .map(a => a.href);
+   console.log(urls);
+   // → ["https://...", "https://...", ...] ✅
+   ```
+
+3. 결과 확인 완료 ✓
+
+4. 최종 크롤링 코드 작성
+
+### 주의사항
+- 브라우저 콘솔 없이 바로 코드를 작성하지 말 것
+- console.log는 필수 (동작 검증)
+- 모든 엣지 케이스를 테스트할 것 (빈 요소, 로딩 지연 등)
+
 ## 자동 업데이트
 
 스킬 실행 시 최신 버전을 자동으로 확인하고 필요하면 업데이트합니다:
