@@ -16,6 +16,8 @@ import {
   autoUpdateIfNeeded,
   verifyBrowserReady,
   visualizePageReferences,
+  detectExistingBrowser,
+  bringWindowToFront,
 } from './browser.js';
 
 /**
@@ -53,12 +55,30 @@ const ensureChrome = async (): Promise<boolean> => {
 const main = async (): Promise<void> => {
   log('🚀 TTJ 브라우저를 초기화 중입니다...', 'info');
 
+  const profilePath = getProfilePath();
+
+  // 1. 기존 브라우저 감지 (가장 먼저 - 있으면 재사용해서 빠르게 종료)
+  const existing = await detectExistingBrowser(profilePath);
+  if (existing.found) {
+    log('✅ 기존 브라우저 감지됨', 'success');
+    if (existing.pid !== undefined) {
+      await bringWindowToFront(existing.pid);
+    }
+    log('🔄 Chrome 윈도우를 맨 앞으로 가져왔습니다', 'success');
+    log('💬 작업하고 싶은 것을 말씀해주세요', 'info');
+
+    if (isVisualizeRequested() && existing.port !== undefined) {
+      await visualizePageReferences({ port: existing.port, profilePath });
+    }
+    return;
+  }
+
+  // 2. 새 브라우저 실행 (기존 로직)
   await ensurePlaywrightCli();
 
   const chromeReady = await ensureChrome();
   if (!chromeReady) return;
 
-  const profilePath = getProfilePath();
   await ensureProfile(profilePath);
   log(`📁 브라우저 프로필 생성: ${profilePath}`, 'success');
 

@@ -9,10 +9,11 @@ import {
   getVersionFromPackageJson,
   getLatestVersionFromNpm,
   checkPortAvailable,
+  getOsType,
 } from './utils.js';
 import { detectPlaywrightCli, detectChrome } from './detector.js';
 import { log } from './logger.js';
-import type { BrowserConfig, VersionInfo } from './types.js';
+import type { BrowserConfig, VersionInfo, ExistingBrowser } from './types.js';
 
 const START_URL = 'https://www.google.com';
 
@@ -26,6 +27,123 @@ const RETRY_MAX_ATTEMPTS = 10;
  */
 export const installPlaywrightCli = async (): Promise<void> => {
   await execCommand('npm install -g @playwright/cli');
+};
+
+/**
+ * Parse the `--remote-debugging-port=NNNN` value from a process command line.
+ */
+const parseDebugPort = (cmdline: string): number | undefined => {
+  const match = cmdline.match(/--remote-debugging-port=(\d+)/);
+  return match ? Number.parseInt(match[1], 10) : undefined;
+};
+
+/**
+ * Turn one raw process entry (pid + command line) into an ExistingBrowser hit,
+ * but only when it is a Chrome CDP process bound to our expected profile.
+ */
+const toBrowserHit = (
+  pid: number,
+  cmdline: string,
+  expectedProfilePath: string,
+): ExistingBrowser | undefined => {
+  if (!cmdline.includes('--remote-debugging-port=')) return undefined;
+  if (!cmdline.includes(expectedProfilePath)) return undefined;
+  const port = parseDebugPort(cmdline);
+  return port !== undefined ? { found: true, port, pid } : undefined;
+};
+
+/**
+ * macOS / Linux: list processes as "PID<space>COMMAND" lines, then pick the
+ * Chrome CDP process whose --user-data-dir is our profile.
+ */
+const detectExistingBrowserUnix = async (
+  expectedProfilePath: string,
+): Promise<ExistingBrowser> => {
+  const output = await execCommand('ps -ax -o pid=,command=');
+  const hit = output
+    .split('\n')
+    .map((line) => line.trim())
+    .map((line) => {
+      const pidMatch = line.match(/^(\d+)\s+(.*)$/);
+      return pidMatch
+        ? toBrowserHit(
+            Number.parseInt(pidMatch[1], 10),
+            pidMatch[2],
+            expectedProfilePath,
+          )
+        : undefined;
+    })
+    .find((entry) => entry !== undefined);
+  return hit ?? { found: false };
+};
+
+/**
+ * Windows: enumerate chrome.exe processes via PowerShell/CIM, emitting
+ * "PID|||COMMANDLINE" lines, then match our profile.
+ */
+const detectExistingBrowserWindows = async (
+  expectedProfilePath: string,
+): Promise<ExistingBrowser> => {
+  const output = await execCommand(
+    'powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \\"name=\'chrome.exe\'\\" | ForEach-Object { \\"$($_.ProcessId)|||$($_.CommandLine)\\" }"',
+  );
+  const hit = output
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.includes('|||'))
+    .map((line) => {
+      const [pidPart, ...rest] = line.split('|||');
+      const pid = Number.parseInt(pidPart, 10);
+      return Number.isNaN(pid)
+        ? undefined
+        : toBrowserHit(pid, rest.join('|||'), expectedProfilePath);
+    })
+    .find((entry) => entry !== undefined);
+  return hit ?? { found: false };
+};
+
+/**
+ * Detect an already-running TTJ browser: a Chrome process that exposes a
+ * remote-debugging port AND uses our expected profile directory.
+ * Fast (single `ps`/CIM call) and best-effort — any error yields { found: false }.
+ */
+export const detectExistingBrowser = async (
+  expectedProfilePath: string,
+): Promise<ExistingBrowser> => {
+  try {
+    return getOsType() === 'windows'
+      ? await detectExistingBrowserWindows(expectedProfilePath)
+      : await detectExistingBrowserUnix(expectedProfilePath);
+  } catch {
+    return { found: false };
+  }
+};
+
+/**
+ * Bring the running Chrome window to the foreground, per platform.
+ * Best-effort — the browser is already alive, so any failure is ignored.
+ */
+export const bringWindowToFront = async (pid: number): Promise<void> => {
+  const osType = getOsType();
+  try {
+    if (osType === 'macos') {
+      await execCommand(
+        'osascript -e \'tell application "Google Chrome" to activate\'',
+      );
+      return;
+    }
+    if (osType === 'windows') {
+      await execCommand(
+        `powershell -NoProfile -Command "$p = Get-Process -Id ${pid} -ErrorAction SilentlyContinue; if ($p -and $p.MainWindowHandle -ne 0) { Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class TtjWin { [DllImport(\\"user32.dll\\")] public static extern bool SetForegroundWindow(IntPtr h); [DllImport(\\"user32.dll\\")] public static extern bool ShowWindow(IntPtr h, int c); }'; [TtjWin]::ShowWindow($p.MainWindowHandle, 9) | Out-Null; [TtjWin]::SetForegroundWindow($p.MainWindowHandle) | Out-Null }"`,
+      );
+      return;
+    }
+    await execCommand(
+      `wmctrl -i -a $(xdotool search --pid ${pid} | head -1)`,
+    );
+  } catch {
+    // Window focusing failure is ignored; the browser is already running.
+  }
 };
 
 /**

@@ -21,3 +21,9 @@ export interface VersionInfo {
   latest: string;
   hasUpdate: boolean;
 }
+
+export interface ExistingBrowser {
+  found: boolean;
+  port?: number;
+  pid?: number;
+}

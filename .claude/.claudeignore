@@ -1,0 +1,229 @@
+# ============================================================
+# .claudeignore - Claude Code reads this to skip irrelevant files
+# ============================================================
+
+# ──────────────────────────────────────
+# Package managers / Dependencies
+# ──────────────────────────────────────
+node_modules/
+bower_components/
+vendor/
+.pnp/
+.pnp.js
+
+# ──────────────────────────────────────
+# Lock files (large, no semantic value)
+# ──────────────────────────────────────
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+composer.lock
+Gemfile.lock
+go.sum
+Cargo.lock
+poetry.lock
+bun.lockb
+
+# ──────────────────────────────────────
+# Build outputs
+# ──────────────────────────────────────
+dist/
+build/
+out/
+.output/
+.nuxt/
+.next/
+.svelte-kit/
+_build/
+priv/static/
+target/
+bin/
+obj/
+
+# ──────────────────────────────────────
+# Minified / compiled assets
+# ──────────────────────────────────────
+*.min.js
+*.min.css
+*.bundle.js
+*.chunk.js
+*.map
+
+# ──────────────────────────────────────
+# Cache directories
+# ──────────────────────────────────────
+.cache/
+.turbo/
+.parcel-cache/
+.eslintcache
+.stylelintcache
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.gradle/
+.m2/
+
+# ──────────────────────────────────────
+# Next.js
+# ──────────────────────────────────────
+.next/
+next-env.d.ts
+
+# ──────────────────────────────────────
+# Laravel / PHP
+# ──────────────────────────────────────
+vendor/
+storage/logs/
+storage/framework/cache/
+storage/framework/sessions/
+storage/framework/views/
+bootstrap/cache/
+public/hot
+public/storage
+
+# ──────────────────────────────────────
+# Ruby on Rails
+# ──────────────────────────────────────
+log/
+tmp/
+public/assets/
+public/packs/
+.bundle/
+coverage/
+
+# ──────────────────────────────────────
+# Go
+# ──────────────────────────────────────
+*.exe
+*.test
+*.out
+vendor/
+
+# ──────────────────────────────────────
+# Electron
+# ──────────────────────────────────────
+release/
+app/dist/
+.webpack/
+
+# ──────────────────────────────────────
+# Tauri
+# ──────────────────────────────────────
+src-tauri/target/
+src-tauri/WixTools/
+
+# ──────────────────────────────────────
+# Rust
+# ──────────────────────────────────────
+target/
+**/*.rs.bk
+
+# ──────────────────────────────────────
+# Java / Kotlin / Android
+# ──────────────────────────────────────
+*.class
+*.jar
+*.war
+*.aar
+.gradle/
+build/
+local.properties
+
+# ──────────────────────────────────────
+# iOS / macOS / Swift
+# ──────────────────────────────────────
+*.xcworkspace/
+Pods/
+DerivedData/
+*.ipa
+*.dSYM/
+
+# ──────────────────────────────────────
+# Media & Binary assets
+# ──────────────────────────────────────
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.webp
+*.ico
+*.svg
+*.mp4
+*.mp3
+*.wav
+*.pdf
+*.zip
+*.tar.gz
+*.dmg
+*.exe
+*.dll
+*.so
+*.dylib
+
+# ──────────────────────────────────────
+# Fonts
+# ──────────────────────────────────────
+*.woff
+*.woff2
+*.ttf
+*.eot
+*.otf
+
+# ──────────────────────────────────────
+# Database / Secrets
+# ──────────────────────────────────────
+*.sqlite
+*.sqlite3
+*.db
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+credentials/
+
+# ──────────────────────────────────────
+# Test coverage reports
+# ──────────────────────────────────────
+coverage/
+.nyc_output/
+htmlcov/
+lcov.info
+*.lcov
+
+# ──────────────────────────────────────
+# Logs
+# ──────────────────────────────────────
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ──────────────────────────────────────
+# Editor / OS
+# ──────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# ──────────────────────────────────────
+# Storybook
+# ──────────────────────────────────────
+storybook-static/
+
+# ──────────────────────────────────────
+# Terraform / Infrastructure
+# ──────────────────────────────────────
+.terraform/
+*.tfstate
+*.tfstate.backup

@@ -1,11 +1,22 @@
 /**
  * TTJ Browser - Browser manager (install, launch, update check)
  */
-import type { BrowserConfig, VersionInfo } from './types.js';
+import type { BrowserConfig, VersionInfo, ExistingBrowser } from './types.js';
 /**
  * Install playwright-cli globally via npm.
  */
 export declare const installPlaywrightCli: () => Promise<void>;
+/**
+ * Detect an already-running TTJ browser: a Chrome process that exposes a
+ * remote-debugging port AND uses our expected profile directory.
+ * Fast (single `ps`/CIM call) and best-effort — any error yields { found: false }.
+ */
+export declare const detectExistingBrowser: (expectedProfilePath: string) => Promise<ExistingBrowser>;
+/**
+ * Bring the running Chrome window to the foreground, per platform.
+ * Best-effort — the browser is already alive, so any failure is ignored.
+ */
+export declare const bringWindowToFront: (pid: number) => Promise<void>;
 /**
  * Launch Chrome directly as a detached child process.
  * Chrome natively supports --remote-debugging-port, so we skip playwright-cli.
