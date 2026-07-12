@@ -11,7 +11,7 @@ no session management and each command finishes in ~0.4s.
 - ✅ **Auto-relaunches** the browser if it was closed, then continues
 - ✅ `click`/`type` use real CDP input events (isTrusted=true); `type` adds a 100–300ms per-key random delay
 - ✅ Page element visualization (`--visualize`): badge overlay + hover selector + click-to-copy
-- ✅ Crawl-target analysis (`crawl`): detects repeating lists vs layout regions, scored by value
+- ✅ Crawl-target analysis (`analyze`): red-box overlay + structure JSON (repeating lists, tables, forms) to stdout
 - ✅ Daily auto-update check
 
 ## Requirements
@@ -53,8 +53,8 @@ ttj-skills-playwright screenshot /tmp/shot.png --full
 # Visualize every element (badge overlay + full-page screenshot)
 ttj-skills-playwright --visualize
 
-# Analyze crawl targets (repeating lists + layout regions + JSON)
-ttj-skills-playwright crawl
+# Analyze crawl targets (red boxes + full-page screenshot + structure JSON on stdout)
+ttj-skills-playwright analyze
 
 # Remove overlays
 ttj-skills-playwright clear

@@ -34,6 +34,7 @@ import {
   activateTab,
   clearOverlays,
 } from './cdp.js';
+import { analyzeActivePage } from './analyzer.js';
 
 /**
  * Read the package version dynamically from package.json (ESM-safe).
@@ -58,6 +59,7 @@ Commands:
   tabs                     List open tabs with indexes
   tab <n>                  Bring tab n to the front
   clear                    Remove visualization overlays from the page
+  analyze                  Overlay red boxes + print page structure JSON (crawl targets)
   screenshot [path] [--full]  Capture the active tab (default: <tmpdir>/ttj-screenshot.png)
 
 Options:
@@ -73,6 +75,7 @@ Examples:
   $ ttj-skills-playwright eval "document.querySelector('#btn').style.background='yellow'"
   $ ttj-skills-playwright screenshot /tmp/shot.png --full
   $ ttj-skills-playwright --visualize  # Overlay element badges + screenshot
+  $ ttj-skills-playwright analyze      # Red boxes + JSON of crawlable structure
 `;
 
 /**
@@ -374,6 +377,29 @@ const runClear = async (): Promise<void> => {
 };
 
 /**
+ * `analyze` — visualize the page (red boxes + full-page screenshot) AND print
+ * a machine-readable JSON of the page structure to stdout so an AI can propose
+ * crawlable targets. Human-readable notes go through log() (stderr-style), so
+ * the last large stdout payload is the JSON itself.
+ */
+const runAnalyze = async (): Promise<void> => {
+  const port = await resolveRunningPort();
+  if (port === undefined) return;
+
+  // 1) Existing visualization: red boxes + badges + full-page screenshot.
+  await visualizePageReferences({ port, profilePath: getProfilePath() });
+
+  // 2) Structure analysis → JSON (the final, machine-readable stdout output).
+  log('Analyzing page structure for crawlable targets...', 'info');
+  const result = await analyzeActivePage(port);
+  log(
+    'Page analysis JSON follows (repeating lists, tables, forms, meta):',
+    'info',
+  );
+  console.log(JSON.stringify(result, null, 2));
+};
+
+/**
  * `screenshot [path] [--full]` — capture the active tab over CDP.
  */
 const runScreenshot = async (args: readonly string[]): Promise<void> => {
@@ -402,6 +428,7 @@ const SUBCOMMANDS: Record<string, (() => Promise<void>) | undefined> = {
   tabs: () => runTabs(),
   tab: () => runTab(commandArgs[0]),
   clear: () => runClear(),
+  analyze: () => runAnalyze(),
   screenshot: () => runScreenshot(commandArgs),
 };
 

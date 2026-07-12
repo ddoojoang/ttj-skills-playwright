@@ -1,12 +1,15 @@
 ---
 name: ttj-skills-playwright
-description: Drive an existing Chrome over CDP (Playwright core) with one-shot commands — eval / goto / click / type / wait / tabs / screenshot — plus page element visualization and analysis. After opening the browser with this skill, ALL browser actions must go through this skill's commands. Reply in the user's language (any language).
+description: Drive an existing Chrome over CDP (Playwright core) with one-shot commands — eval / goto / click / type / wait / tabs / screenshot — plus page element visualization (--visualize) and structure analysis (analyze → red boxes + crawl-target JSON). After opening the browser with this skill, ALL browser actions must go through this skill's commands. Reply in the user's language (any language).
 disable-model-invocation: false
 allowed-tools: Bash, Read, Write
 auto-invoke-keywords: [
   "visualize", "show elements", "show me the elements", "page structure",
   "find buttons", "find links", "what elements", "highlight elements",
   "analyze elements", "show the html", "show html structure",
+  "analyze this page", "analyze the page", "what can I crawl", "what can i crawl",
+  "crawl targets", "html 분석", "페이지 분석", "크롤링 뭐", "뭘 크롤링",
+  "크롤링.*?(가능|할 수|뭐|대상)", "(html|페이지|요소).*?분석",
   "시각화해줘", "시각화해봐", "시각화 해줘", "시각화 해봐",
   "요소.*?(보여|찾아|시각|확인|표시|표현|분석)",
   "구조.*?(보여|찾아|시각|확인|표시)",
@@ -53,7 +56,8 @@ Launches a dedicated Chrome (CDP port 9227, fixed profile `~/.ttj-skills-playwri
 | Wait for an element (SPA / lazy) | `ttj-skills-playwright wait "<selector>" [timeoutMs]` |
 | List / switch tabs | `ttj-skills-playwright tabs` / `ttj-skills-playwright tab <n>` |
 | Screenshot | `ttj-skills-playwright screenshot [path] [--full]` |
-| Visualize / analyze elements (show HTML structure) | `ttj-skills-playwright --visualize` |
+| Visualize elements (show HTML structure) | `ttj-skills-playwright --visualize` |
+| Analyze crawl targets (red boxes + JSON) | `ttj-skills-playwright analyze` |
 | Remove overlays (badges/boxes) | `ttj-skills-playwright clear` |
 
 Every command auto-detects the running browser (process detection + CDP port probe), connects over CDP, and targets the **visible active tab**. It reuses an already-open browser without adding tabs; it launches a new one only when nothing is running (skip even that with `--no-launch`).
@@ -143,6 +147,36 @@ Hover a badge to isolate that element — every other box dims and the hovered e
 4. The user can copy a badge's ref (`e7`) or click a badge to copy its selector, then ask you to act on it.
 
 **Overlay rule**: each `--visualize` clears the previous overlay and shows only the new one. Badges/boxes stay on the page, so run `ttj-skills-playwright clear` for a clean screen/screenshot (no reload needed).
+
+## Crawl-target analysis (analyze)
+
+**Trigger**: "요소 보여줘", "요소 분석", "html 분석해줘", "크롤링 뭐 할 수 있어", "페이지 분석" · "show elements", "analyze this page", "what can I crawl", "크롤링 대상 찾아줘".
+
+`analyze` does two things in one shot: (1) runs the same red-box **visualization** (badges `e1, e2, …` + full-page screenshot, path printed in the "📸 Screenshot saved:" log line), then (2) prints a **machine-readable JSON** of the page structure to stdout — this JSON is the last large stdout block. Shape:
+
+```jsonc
+{
+  "meta":  { "url", "title", "headings": [ "top h1~h2 text (≤5)" ] },
+  "repeatingGroups": [   // scored desc, top 10 — the main crawl targets
+    {
+      "containerSelector", "itemSelector", "count",
+      "fields":  { "title", "link", "image", "price", "date" },  // booleans
+      "samples": [ { "text": "≤80 chars", "href?", "imgSrc?" } ], // first 3 items
+      "score"
+    }
+  ],
+  "tables": [ { "selector", "rows", "columns", "headers": [] } ],
+  "forms":  [ { "selector", "inputs": [ { "type", "placeholder?", "name?" } ] } ]
+}
+```
+
+**AI procedure:**
+1. Run `ttj-skills-playwright analyze`.
+2. Read the JSON from stdout and **judge** which entries are worth crawling. Present them to the user (in the user's language) as a numbered list. For each item state: what it is (e.g. "뉴스 기사 목록, 20건"), the extractable fields (title / link / image / price / date), and the `itemSelector` to use.
+3. Show the screenshot path and note that the red badges (`e1, e2, …`) on the page correspond to these proposed targets so the user can cross-check visually.
+4. When the user picks an item, use its `itemSelector` to write the follow-up `eval` / crawling code (still going through the ① DOM verification → ② write → ③ run-test gates below).
+
+Prefer `analyze` over `--visualize` when the user's intent is "what can I extract/crawl here"; use `--visualize` when they only want to see/label elements.
 
 ## Dev rules (ONLY for "code deliverable" requests — standalone scripts)
 
