@@ -21,8 +21,18 @@ function ensureDir(dir) {
   }
 }
 
+// Codex frontmatter must stay in sync with the source description. We reuse
+// the source's own `description:` line so it never drifts (e.g. stale
+// "Playwright CLI" wording). Codex-specific fields (auto-invoke-keywords,
+// allowed-tools) are dropped — only name + description are kept.
+function extractDescription(content) {
+  const match = content.match(/^description:\s*(.+)$/m);
+  return match ? match[1].trim() : `${skillName} - dedicated CDP browser CLI`;
+}
+
 function toCodexSkill(content) {
-  const codexFrontmatter = `---\nname: ${skillName}\ndescription: ttj-skills-browser - Playwright CLI with automatic browser profile management and page element visualization.\n---`;
+  const description = extractDescription(content);
+  const codexFrontmatter = `---\nname: ${skillName}\ndescription: ${description}\n---`;
 
   if (content.startsWith('---')) {
     const end = content.indexOf('\n---', 3);
