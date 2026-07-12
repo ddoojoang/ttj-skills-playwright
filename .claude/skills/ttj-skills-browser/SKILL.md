@@ -157,6 +157,20 @@ ttj-skills-browser screenshot /tmp/full.png --full # 전체 페이지
 
 **기본 라이브러리 (언어 미명시 시)**: 브라우저 제어 = Puppeteer, HTTP 크롤링 = Axios + Cheerio. 사용자가 다른 도구를 명시하면 그에 따름.
 
+**브라우저 자동화는 headless: false가 기본값** — 사용자가 화면으로 동작을 확인할 수 있어야 한다:
+```javascript
+const browser = await puppeteer.launch({ headless: false });   // 명시적 요청 시에만 true
+```
+
+**코드 구성: 기능을 함수 단위로 묶는다** — 하나의 함수 = 하나의 역할. 로그인/목록 수집/상세 파싱/저장을
+각각 독립 함수로 분리하고, 흐름 함수가 이들을 조합한다 (거대한 단일 스크립트 금지):
+```javascript
+const fetchListPage = (page) => { ... };      // 목록 수집만
+const parseItem = (el) => ({ ... });          // 파싱만 (순수 함수)
+const saveResults = (items) => { ... };       // 저장만 (부수 효과)
+const crawl = async () => saveResults((await fetchListPage(page)).map(parseItem));
+```
+
 **자동화 인간화 (봇 탐지 회피) — 필수:**
 ```javascript
 const randomDelay = () => Math.random() * 200 + 100;   // 타이핑: 글자당 100-300ms
@@ -173,6 +187,12 @@ await page.waitForTimeout(randomWait());
    ```
 2. 예상 데이터가 나오는지, 누락·중복은 없는지 확인
 3. 검증된 셀렉터·로직으로만 최종 코드 작성 (검증 없이 바로 코드 작성 금지)
+
+**완료 후 실행 테스트 (필수)** — 코드를 작성했다고 끝이 아니다:
+4. AI가 작성한 코드를 **직접 디버깅 모드로 실행** (headless: false로 브라우저 동작을 띄운 채,
+   단계별 로그를 출력하며 실행)
+5. 오류·빈 결과·셀렉터 미스가 나오면 수정 → 재실행을 **정상 완료될 때까지 반복**
+6. 최종 실행 결과(수집 건수, 샘플 데이터)를 사용자에게 보고한 뒤에만 작업 완료로 간주
 
 ## 트러블슈팅 (명령이 반복 실패할 때만)
 
