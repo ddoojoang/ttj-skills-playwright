@@ -36,13 +36,15 @@ Launches a dedicated Chrome (CDP port 9227, fixed profile `~/.ttj-skills-playwri
 
 **After the user opens the browser with this skill, every browser action MUST use the commands below only.**
 
-## 🚨 On launch, if a browser already exists: report tabs, don't touch them
+## 🚨 Skill start ritual: check 9227 first, then report tabs and ASK
 
-When the skill is invoked (bare `ttj-skills-playwright`, no subcommand) and a browser is already running, the CLI **reuses it and never opens a new tab**. It brings the window to the front and prints the currently open tabs to stdout (`▶ [n] title — url`), ending with `✅ Reused the existing browser — no new tab was opened`. When you see this:
+When the skill is activated, always start with the bare command `ttj-skills-playwright` (no subcommand). It checks the dedicated ttj profile browser on CDP port 9227 (probing the port even when process detection misses): if none is running it launches one; if one is already running — e.g. left open by a previous session — it **reuses it and never opens a new tab**, brings the window to the front, and prints the open tabs to stdout (`▶ [n] title — url`), ending with `✅ Reused the existing browser — no new tab was opened`.
+
+When you see that reuse output:
 
 1. **Do NOT** run `goto` / open a new tab / launch anything on your own initiative.
-2. **Summarize the open tabs in the user's language** ("현재 이런 페이지들이 열려 있어요: …").
-3. **Wait for the user's next instruction** before acting on any tab.
+2. **Report the tab situation in the user's language** — how many tabs are open and what each one is, e.g. "이전에 쓰시던 브라우저가 열려 있어서 앞으로 가져왔어요. 탭이 2개 열려 있습니다: [1] Hacker News, [2] 네이버 로그인".
+3. **Ask the user which tab (by number) they want to work on and what they want to do** — e.g. "몇 번 탭에서 어떤 작업을 할까요?". Then switch with `ttj-skills-playwright tab <n>` and proceed on that tab only.
 
 ## 🚨 Preserve the existing browser and tabs
 

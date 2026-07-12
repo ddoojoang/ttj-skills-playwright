@@ -144,7 +144,10 @@ const reuseExistingBrowser = async (
   log('✅ Reused the existing browser — no new tab was opened', 'success');
   log('📋 Currently open tabs:', 'info');
   await printOpenTabs(port);
-  log('💬 Tell me what you want to do', 'info');
+  log(
+    '💬 AI: report these tabs to the user and ask which tab (n) to work on and what to do',
+    'info',
+  );
 
   if (isVisualizeRequested()) {
     await visualizePageReferences({ port, profilePath });
