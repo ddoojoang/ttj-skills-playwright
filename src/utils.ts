@@ -1,5 +1,5 @@
 /**
- * ttj-skills-browser - Utility functions (pure where possible)
+ * ttj-skills-playwright - Utility functions (pure where possible)
  */
 
 import os from 'os';
@@ -14,7 +14,7 @@ import type { OS } from './types.js';
 
 const execAsync = promisify(exec);
 
-const PACKAGE_NAME = 'ttj-skills-browser';
+const PACKAGE_NAME = 'ttj-skills-playwright';
 const NPM_REGISTRY = 'https://registry.npmjs.org';
 
 /**
@@ -33,16 +33,16 @@ export const getOsType = (): OS =>
 export const getHomeDir = (): string => os.homedir();
 
 /**
- * Resolve the ttj-skills-browser profile path per platform:
- *  - Windows: %APPDATA%\ttj-skills-browser
- *  - macOS / Linux: ~/.ttj-skills-browser
+ * Resolve the ttj-skills-playwright profile path per platform:
+ *  - Windows: %APPDATA%\ttj-skills-playwright
+ *  - macOS / Linux: ~/.ttj-skills-playwright
  */
 export const getProfilePath = (): string => {
   const isWindows = getOsType() === 'windows';
   const appData = process.env.APPDATA;
   const base =
     isWindows && appData ? appData : getHomeDir();
-  const folderName = isWindows ? 'ttj-skills-browser' : '.ttj-skills-browser';
+  const folderName = isWindows ? 'ttj-skills-playwright' : '.ttj-skills-playwright';
   return path.join(base, folderName);
 };
 

@@ -11,7 +11,7 @@ import { homedir } from 'os';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const skillName = 'ttj-skills-browser';
+const skillName = 'ttj-skills-playwright';
 const skillSourceDir = path.join(__dirname, '..', '.claude', 'skills', skillName);
 const skillFile = 'SKILL.md';
 
@@ -50,13 +50,13 @@ try {
   if (fs.existsSync(sourceFile)) {
     const sourceContent = fs.readFileSync(sourceFile, 'utf8');
 
-    // Claude Code: 기존 /ttj-skills-browser 호출 방식 유지
+    // Claude Code: 기존 /ttj-skills-playwright 호출 방식 유지
     const claudeTargetDir = path.join(homedir(), '.claude', 'skills', skillName);
     const claudeTargetFile = path.join(claudeTargetDir, skillFile);
     ensureDir(claudeTargetDir);
     fs.copyFileSync(sourceFile, claudeTargetFile);
     console.log(`✅ Claude Code 스킬 설치 완료: ${claudeTargetFile}`);
-    console.log(`   이제 어디서든 /ttj-skills-browser 스킬을 사용할 수 있습니다!`);
+    console.log(`   이제 어디서든 /ttj-skills-playwright 스킬을 사용할 수 있습니다!`);
 
     // Codex: 사용자 전역 스킬 위치에 lower-case kebab-case 이름으로 설치
     const codexTargetDir = path.join(homedir(), '.agents', 'skills', skillName);
@@ -67,7 +67,7 @@ try {
     console.log(`   이제 Codex에서 $${skillName} 스킬을 사용할 수 있습니다!`);
 
     // 설치 완료 플래그 파일 생성 (빠른 확인용)
-    const flagFile = path.join(homedir(), '.ttj-skills-browser-installed');
+    const flagFile = path.join(homedir(), '.ttj-skills-playwright-installed');
     fs.writeFileSync(flagFile, `${new Date().toISOString()}\n`);
   } else {
     console.warn(`⚠️  SKILL.md를 찾을 수 없습니다: ${sourceFile}`);

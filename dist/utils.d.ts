@@ -1,5 +1,5 @@
 /**
- * ttj-skills-browser - Utility functions (pure where possible)
+ * ttj-skills-playwright - Utility functions (pure where possible)
  */
 import type { OS } from './types.js';
 /**
@@ -11,9 +11,9 @@ export declare const getOsType: () => OS;
  */
 export declare const getHomeDir: () => string;
 /**
- * Resolve the ttj-skills-browser profile path per platform:
- *  - Windows: %APPDATA%\ttj-skills-browser
- *  - macOS / Linux: ~/.ttj-skills-browser
+ * Resolve the ttj-skills-playwright profile path per platform:
+ *  - Windows: %APPDATA%\ttj-skills-playwright
+ *  - macOS / Linux: ~/.ttj-skills-playwright
  */
 export declare const getProfilePath: () => string;
 /**

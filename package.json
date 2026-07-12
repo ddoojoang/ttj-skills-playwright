@@ -1,10 +1,10 @@
 {
-  "name": "ttj-skills-browser",
-  "version": "1.2.18",
-  "description": "ttj-skills-browser - Dedicated CDP browser with one-shot commands (eval/goto/screenshot) and page reference visualization",
+  "name": "ttj-skills-playwright",
+  "version": "1.0.0",
+  "description": "Drive an existing Chrome over CDP (Playwright core) with one-shot commands — eval, goto, click, type, wait, tabs, screenshot — plus page element visualization and crawl-target analysis. Skill for Claude Code & Codex.",
   "type": "module",
   "bin": {
-    "ttj-skills-browser": "dist/cli.js"
+    "ttj-skills-playwright": "dist/cli.js"
   },
   "main": "./dist/cli.js",
   "files": [
@@ -28,20 +28,27 @@
   },
   "keywords": [
     "playwright",
+    "cdp",
+    "chrome",
     "browser",
     "automation",
-    "cli"
+    "cli",
+    "crawl",
+    "scraping",
+    "claude",
+    "codex",
+    "skill"
   ],
   "author": "TTJ",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ddoojoang/ttj-skills-browser.git"
+    "url": "git+https://github.com/ddoojoang/ttj-skills-playwright.git"
   },
   "bugs": {
-    "url": "https://github.com/ddoojoang/ttj-skills-browser/issues"
+    "url": "https://github.com/ddoojoang/ttj-skills-playwright/issues"
   },
-  "homepage": "https://github.com/ddoojoang/ttj-skills-browser#readme",
+  "homepage": "https://github.com/ddoojoang/ttj-skills-playwright#readme",
   "engines": {
     "node": ">=18.0.0"
   }

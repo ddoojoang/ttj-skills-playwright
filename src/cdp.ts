@@ -1,5 +1,5 @@
 /**
- * ttj-skills-browser - Direct CDP connection helpers (playwright-core).
+ * ttj-skills-playwright - Direct CDP connection helpers (playwright-core).
  *
  * Connects to the already-running Chrome (launched by this tool with
  * `--remote-debugging-port`) over CDP. No playwright-cli session, no temp
@@ -86,7 +86,7 @@ export const withActivePage = <T>(
     const page = await pickActivePage(browser);
     if (!page) {
       throw new Error(
-        '열린 페이지가 없습니다. 브라우저에서 작업할 페이지를 먼저 열어주세요.',
+        'No open page found. Open a page in the browser first.',
       );
     }
     return fn(page);
@@ -214,7 +214,7 @@ export const activateTab = (port: number, index: number): Promise<string> =>
     const pages = contentPages(browser);
     const target = pages[index - 1];
     if (!target) {
-      throw new Error(`탭 ${index}번이 없습니다 (열린 탭: ${pages.length}개)`);
+      throw new Error(`Tab ${index} not found (open tabs: ${pages.length})`);
     }
     await target.bringToFront();
     return target.url();

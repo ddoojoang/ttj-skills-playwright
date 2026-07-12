@@ -1,5 +1,5 @@
 /**
- * ttj-skills-browser - Browser manager (install, launch, update check)
+ * ttj-skills-playwright - Browser manager (install, launch, update check)
  */
 import { spawn } from 'child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -71,7 +71,7 @@ const detectExistingBrowserWindows = async (expectedProfilePath) => {
     return hit ?? { found: false };
 };
 /**
- * Detect an already-running ttj-skills-browser: a Chrome process that exposes a
+ * Detect an already-running ttj-skills-playwright: a Chrome process that exposes a
  * remote-debugging port AND uses our expected profile directory.
  * Fast (single `ps`/CIM call) and best-effort — any error yields { found: false }.
  */
@@ -195,7 +195,7 @@ export const autoUpdateIfNeeded = async () => {
         const versionInfo = await checkForUpdates();
         if (versionInfo.hasUpdate) {
             log(`업데이트 중... (${versionInfo.current} → ${versionInfo.latest})`, 'info');
-            await execCommand('npm install -g ttj-skills-browser@latest');
+            await execCommand('npm install -g ttj-skills-playwright@latest');
             log(`✅ 최신버전이 있어서 업데이트했습니다 (${versionInfo.current} → ${versionInfo.latest})`, 'success');
         }
     }
@@ -499,22 +499,22 @@ const OVERLAY_JS = `() => {
  */
 export const visualizePageReferences = async (config) => {
     try {
-        log('기존 브라우저(CDP)에 연결 중입니다...', 'info');
+        log('Connecting to the running browser over CDP...', 'info');
         await withActivePage(config.port, async (page) => {
             log('페이지 요소를 시각화 중입니다 (자동 스크롤 + 라벨 오버레이)...', 'info');
             // evaluate(string) runs an expression — wrap as IIFE so the function
             // strings are actually invoked (and their promises awaited).
             await page.evaluate(`(${AUTO_SCROLL_JS})()`);
             await page.evaluate(`(${OVERLAY_JS})()`);
-            log('전체 페이지 스크린샷을 촬영 중입니다...', 'info');
+            log('Capturing full-page screenshot...', 'info');
             await page.screenshot({ path: VISUAL_SCREENSHOT_PATH, fullPage: true });
         });
-        log(`📸 스크린샷 저장: ${VISUAL_SCREENSHOT_PATH}`, 'success');
+        log(`📸 Screenshot saved: ${VISUAL_SCREENSHOT_PATH}`, 'success');
         log('라벨(e1, e2, e3...)을 클릭하면 CSS 셀렉터가 클립보드에 복사됩니다', 'info');
-        log('✅ 시각화 완료', 'success');
+        log('✅ Visualization complete', 'success');
     }
     catch (error) {
-        log(`시각화 중 오류: ${error instanceof Error ? error.message : String(error)}`, 'error');
+        log(`Visualization error: ${error instanceof Error ? error.message : String(error)}`, 'error');
     }
 };
 const CRAWL_SCREENSHOT_PATH = path.join(tmpdir(), 'ttj-crawl-visual.png');
@@ -767,23 +767,23 @@ const CRAWL_SCAN_JS = `() => {
  */
 export const visualizeCrawlTargets = async (config) => {
     try {
-        log('기존 브라우저(CDP)에 연결 중입니다...', 'info');
+        log('Connecting to the running browser over CDP...', 'info');
         const targets = await withActivePage(config.port, async (page) => {
             log('크롤링 대상을 분석 중입니다 (자동 스크롤 + 반복 구조 탐지)...', 'info');
             await page.evaluate(`(${AUTO_SCROLL_JS})()`);
             const result = await page.evaluate(`(${CRAWL_SCAN_JS})()`);
-            log('전체 페이지 스크린샷을 촬영 중입니다...', 'info');
+            log('Capturing full-page screenshot...', 'info');
             await page.screenshot({ path: CRAWL_SCREENSHOT_PATH, fullPage: true });
             return result;
         });
         console.log(JSON.stringify(targets, null, 2));
-        log(`📸 스크린샷 저장: ${CRAWL_SCREENSHOT_PATH}`, 'success');
+        log(`📸 Screenshot saved: ${CRAWL_SCREENSHOT_PATH}`, 'success');
         log('🔵 파란 배지(🕷)=반복 목록(크롤링 추천), 🔴 빨간 배지=레이아웃 영역. crawlScore 높은 순 정렬됨', 'info');
-        log('배지 클릭 시 컨테이너 셀렉터 복사', 'info');
-        log('✅ 크롤링 대상 분석 완료', 'success');
+        log('Click a badge to copy its container selector', 'info');
+        log('✅ Crawl-target analysis complete', 'success');
     }
     catch (error) {
-        log(`크롤링 대상 분석 중 오류: ${error instanceof Error ? error.message : String(error)}`, 'error');
+        log(`Crawl-analysis error: ${error instanceof Error ? error.message : String(error)}`, 'error');
     }
 };
 //# sourceMappingURL=browser.js.map

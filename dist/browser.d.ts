@@ -1,9 +1,9 @@
 /**
- * ttj-skills-browser - Browser manager (install, launch, update check)
+ * ttj-skills-playwright - Browser manager (install, launch, update check)
  */
 import type { BrowserConfig, VersionInfo, ExistingBrowser } from './types.js';
 /**
- * Detect an already-running ttj-skills-browser: a Chrome process that exposes a
+ * Detect an already-running ttj-skills-playwright: a Chrome process that exposes a
  * remote-debugging port AND uses our expected profile directory.
  * Fast (single `ps`/CIM call) and best-effort — any error yields { found: false }.
  */

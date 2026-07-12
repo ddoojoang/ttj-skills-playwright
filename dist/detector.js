@@ -1,5 +1,5 @@
 /**
- * ttj-skills-browser - Detection logic (Chrome, profile)
+ * ttj-skills-playwright - Detection logic (Chrome, profile)
  */
 import path from 'path';
 import { mkdir } from 'fs/promises';

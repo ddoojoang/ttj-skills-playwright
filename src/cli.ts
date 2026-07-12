@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * ttj-skills-browser - CLI entry point
+ * ttj-skills-playwright - CLI entry point
  */
 
 import { readFileSync } from 'fs';
@@ -47,7 +47,7 @@ const getVersion = (): string => {
 };
 
 const HELP_MESSAGE = `
-Usage: ttj-skills-browser [command] [options]
+Usage: ttj-skills-playwright [command] [options]
 
 Commands:
   eval <js>                Run JS in the active tab and print the result
@@ -68,12 +68,12 @@ Options:
   (no options)     Launch browser
 
 Examples:
-  $ ttj-skills-browser              # Start browser
-  $ ttj-skills-browser eval "document.title"
-  $ ttj-skills-browser goto https://www.naver.com
-  $ ttj-skills-browser eval "document.querySelector('#btn').style.background='yellow'"
-  $ ttj-skills-browser screenshot /tmp/shot.png --full
-  $ ttj-skills-browser --visualize  # Overlay element badges + screenshot
+  $ ttj-skills-playwright              # Start browser
+  $ ttj-skills-playwright eval "document.title"
+  $ ttj-skills-playwright goto https://www.naver.com
+  $ ttj-skills-playwright eval "document.querySelector('#btn').style.background='yellow'"
+  $ ttj-skills-playwright screenshot /tmp/shot.png --full
+  $ ttj-skills-playwright --visualize  # Overlay element badges + screenshot
 `;
 
 /**
@@ -85,7 +85,7 @@ const handleInfoFlags = (args: readonly string[]): boolean => {
   const wantsHelp = args.includes('--help') || args.includes('-h');
 
   return wantsVersion
-    ? (console.log(`ttj-skills-browser v${getVersion()}`), true)
+    ? (console.log(`ttj-skills-playwright v${getVersion()}`), true)
     : wantsHelp
       ? (console.log(HELP_MESSAGE), true)
       : false;
@@ -108,12 +108,12 @@ const ensureChrome = async (): Promise<boolean> => {
     );
     return false;
   }
-  log(`Chrome 확인 완료: ${detection.path}`, 'success');
+  log(`Chrome found: ${detection.path}`, 'success');
   return true;
 };
 
 const main = async (): Promise<void> => {
-  log('🚀 ttj-skills-browser를 초기화 중입니다...', 'info');
+  log('🚀 Initializing ttj-skills-playwright...', 'info');
 
   // 0. 가장 먼저 업데이트 확인 (브라우저를 열기 전에 최신 버전 보장)
   await autoUpdateIfNeeded();
@@ -123,12 +123,12 @@ const main = async (): Promise<void> => {
   // 1. 기존 브라우저 감지 (가장 먼저 - 있으면 재사용해서 빠르게 종료)
   const existing = await detectExistingBrowser(profilePath);
   if (existing.found) {
-    log('✅ 기존 브라우저 감지됨', 'success');
+    log('✅ Existing browser detected', 'success');
     if (existing.pid !== undefined) {
       await bringWindowToFront(existing.pid);
     }
-    log('🔄 Chrome 윈도우를 맨 앞으로 가져왔습니다', 'success');
-    log('💬 작업하고 싶은 것을 말씀해주세요', 'info');
+    log('🔄 Brought Chrome window to front', 'success');
+    log('💬 Tell me what you want to do', 'info');
 
     if (isVisualizeRequested() && existing.port !== undefined) {
       await visualizePageReferences({ port: existing.port, profilePath });
@@ -141,7 +141,7 @@ const main = async (): Promise<void> => {
   if (!chromeReady) return;
 
   await ensureProfile(profilePath);
-  log(`📁 브라우저 프로필 생성: ${profilePath}`, 'success');
+  log(`📁 Browser profile: ${profilePath}`, 'success');
 
   const port = await findAvailablePort(9227);
   log(
@@ -152,7 +152,7 @@ const main = async (): Promise<void> => {
   await launchBrowser({ port, profilePath });
 
   log(
-    '🚀 ttj-skills-browser가 열렸습니다, 작업할 페이지로 이동해서 명령해주세요.',
+    '🚀 ttj-skills-playwright가 열렸습니다, 작업할 페이지로 이동해서 명령해주세요.',
     'success',
   );
 
@@ -163,7 +163,7 @@ const main = async (): Promise<void> => {
     if (ready) {
       await visualizePageReferences({ port, profilePath });
     } else {
-      log('CDP 포트가 열리지 않아 시각화를 건너뜁니다', 'warning');
+      log('CDP port did not open; skipping visualization', 'warning');
     }
   }
 
@@ -171,7 +171,7 @@ const main = async (): Promise<void> => {
   verifyBrowserReady({ port, profilePath })
     .then((ready) => {
       if (ready) {
-        log('✅ 브라우저 준비 상태 검증 완료', 'success');
+        log('✅ Browser readiness verified', 'success');
       }
     })
     .catch(() => {
@@ -203,7 +203,7 @@ const resolveRunningPort = async (): Promise<number | undefined> => {
   const existing = await detectExistingBrowser(profilePath);
   if (existing.found && existing.port !== undefined) return existing.port;
 
-  log('브라우저가 닫혀 있어 자동으로 다시 실행합니다...', 'info');
+  log('Browser is closed; relaunching automatically...', 'info');
   const chromeReady = await ensureChrome();
   if (!chromeReady) {
     process.exitCode = 1;
@@ -216,11 +216,11 @@ const resolveRunningPort = async (): Promise<number | undefined> => {
 
   const ready = await waitForCdpReady(port);
   if (!ready) {
-    log('브라우저 자동 실행에 실패했습니다. 다시 시도해주세요.', 'error');
+    log('Failed to auto-launch the browser. Please try again.', 'error');
     process.exitCode = 1;
     return undefined;
   }
-  log(`✅ 브라우저 자동 실행 완료 (CDP 포트 ${port})`, 'success');
+  log(`✅ Browser auto-launched (CDP port ${port})`, 'success');
   return port;
 };
 
@@ -235,7 +235,7 @@ const usageError = (message: string): void => {
  */
 const runEval = async (code: string | undefined): Promise<void> => {
   if (!code) {
-    usageError('실행할 JS 코드를 전달해주세요. 예: ttj-skills-browser eval "document.title"');
+    usageError('Pass JS code to run. e.g. ttj-skills-playwright eval "document.title"');
     return;
   }
   const port = await resolveRunningPort();
@@ -251,14 +251,14 @@ const runEval = async (code: string | undefined): Promise<void> => {
  */
 const runGoto = async (url: string | undefined): Promise<void> => {
   if (!url) {
-    usageError('이동할 URL을 전달해주세요. 예: ttj-skills-browser goto https://www.naver.com');
+    usageError('Pass a URL to navigate to. e.g. ttj-skills-playwright goto https://example.com');
     return;
   }
   const port = await resolveRunningPort();
   if (port === undefined) return;
   const target = url.startsWith('http') ? url : `https://${url}`;
   const title = await gotoInActivePage(port, target);
-  log(`✅ 이동 완료: ${target} (${title})`, 'success');
+  log(`✅ Navigated: ${target} (${title})`, 'success');
 };
 
 /**
@@ -266,13 +266,13 @@ const runGoto = async (url: string | undefined): Promise<void> => {
  */
 const runClick = async (selector: string | undefined): Promise<void> => {
   if (!selector) {
-    usageError('클릭할 셀렉터를 전달해주세요. 예: ttj-skills-browser click "#login-btn"');
+    usageError('Pass a selector to click. e.g. ttj-skills-playwright click "#login-btn"');
     return;
   }
   const port = await resolveRunningPort();
   if (port === undefined) return;
   await clickInActivePage(port, selector);
-  log(`✅ 클릭 완료: ${selector}`, 'success');
+  log(`✅ Clicked: ${selector}`, 'success');
 };
 
 /**
@@ -283,13 +283,13 @@ const runType = async (
   text: string | undefined,
 ): Promise<void> => {
   if (!selector || text === undefined) {
-    usageError('셀렉터와 텍스트를 전달해주세요. 예: ttj-skills-browser type "#query" "검색어"');
+    usageError('Pass a selector and text. e.g. ttj-skills-playwright type "#query" "hello"');
     return;
   }
   const port = await resolveRunningPort();
   if (port === undefined) return;
   await typeInActivePage(port, selector, text);
-  log(`✅ 입력 완료: ${selector} (${[...text].length}자)`, 'success');
+  log(`✅ Typed: ${selector} (${[...text].length} chars)`, 'success');
 };
 
 const DEFAULT_WAIT_TIMEOUT_MS = 10_000;
@@ -302,14 +302,14 @@ const runWait = async (
   timeoutArg: string | undefined,
 ): Promise<void> => {
   if (!selector) {
-    usageError('기다릴 셀렉터를 전달해주세요. 예: ttj-skills-browser wait ".result" 5000');
+    usageError('Pass a selector to wait for. e.g. ttj-skills-playwright wait ".result" 5000');
     return;
   }
   const timeoutMs = Number(timeoutArg) || DEFAULT_WAIT_TIMEOUT_MS;
   const port = await resolveRunningPort();
   if (port === undefined) return;
   await waitInActivePage(port, selector, timeoutMs);
-  log(`✅ 요소 등장 확인: ${selector}`, 'success');
+  log(`✅ Element appeared: ${selector}`, 'success');
 };
 
 /**
@@ -323,7 +323,7 @@ const runTabs = async (): Promise<void> => {
     (tab) =>
       `${tab.active ? '▶' : ' '} [${tab.index}] ${tab.title || '(제목 없음)'} — ${tab.url}`,
   );
-  console.log(lines.join('\n') || '열린 탭이 없습니다.');
+  console.log(lines.join('\n') || 'No open tabs.');
 };
 
 /**
@@ -332,13 +332,13 @@ const runTabs = async (): Promise<void> => {
 const runTab = async (indexArg: string | undefined): Promise<void> => {
   const index = Number(indexArg);
   if (!Number.isInteger(index) || index < 1) {
-    usageError('탭 번호를 전달해주세요. 예: ttj-skills-browser tab 2');
+    usageError('Pass a tab number. e.g. ttj-skills-playwright tab 2');
     return;
   }
   const port = await resolveRunningPort();
   if (port === undefined) return;
   const url = await activateTab(port, index);
-  log(`✅ 탭 전환 완료: [${index}] ${url}`, 'success');
+  log(`✅ Switched tab: [${index}] ${url}`, 'success');
 };
 
 /**
@@ -357,7 +357,7 @@ const runClear = async (): Promise<void> => {
   const port = await resolveRunningPort();
   if (port === undefined) return;
   await clearOverlays(port);
-  log('✅ 오버레이 제거 완료', 'success');
+  log('✅ Overlays cleared', 'success');
 };
 
 /**
@@ -370,7 +370,7 @@ const runScreenshot = async (args: readonly string[]): Promise<void> => {
   const port = await resolveRunningPort();
   if (port === undefined) return;
   const url = await screenshotActivePage(port, outputPath, fullPage);
-  log(`📸 스크린샷 저장: ${outputPath} (${url})`, 'success');
+  log(`📸 Screenshot saved: ${outputPath} (${url})`, 'success');
 };
 
 const cliArgs = process.argv.slice(2);
@@ -398,6 +398,6 @@ const dispatch = (): Promise<void> =>
 
 dispatch().catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);
-  log(`실행 중 오류가 발생했습니다: ${message}`, 'error');
+  log(`Error while running: ${message}`, 'error');
   process.exitCode = 1;
 });
