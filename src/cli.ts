@@ -114,6 +114,43 @@ const ensureChrome = async (): Promise<boolean> => {
   return true;
 };
 
+/**
+ * Print the open tabs to stdout using the shared `▶ [n] title — url` format.
+ * This stdout output is a contract: the AI reads it to tell the user which
+ * pages are currently open (same output as the `tabs` subcommand).
+ */
+const printOpenTabs = async (port: number): Promise<void> => {
+  const tabs = await listTabs(port);
+  const lines = tabs.map(
+    (tab) =>
+      `${tab.active ? '▶' : ' '} [${tab.index}] ${tab.title || '(제목 없음)'} — ${tab.url}`,
+  );
+  console.log(lines.join('\n') || 'No open tabs.');
+};
+
+/**
+ * Reuse an already-running browser. Top invariant: NEVER launch a browser or
+ * open a tab here. Brings the window to the front (pid may be undefined when
+ * found via CDP probe), lists the open tabs to stdout, logs the reuse, and
+ * runs visualization when requested.
+ */
+const reuseExistingBrowser = async (
+  port: number,
+  profilePath: string,
+  pid?: number,
+): Promise<void> => {
+  await bringWindowToFront(pid);
+  log('🔄 Brought Chrome window to front', 'success');
+  log('✅ Reused the existing browser — no new tab was opened', 'success');
+  log('📋 Currently open tabs:', 'info');
+  await printOpenTabs(port);
+  log('💬 Tell me what you want to do', 'info');
+
+  if (isVisualizeRequested()) {
+    await visualizePageReferences({ port, profilePath });
+  }
+};
+
 const main = async (): Promise<void> => {
   log('🚀 Initializing ttj-skills-playwright...', 'info');
 
@@ -122,23 +159,25 @@ const main = async (): Promise<void> => {
 
   const profilePath = getProfilePath();
 
-  // 1. 기존 브라우저 감지 (가장 먼저 - 있으면 재사용해서 빠르게 종료)
+  // 1. 기존 브라우저 감지 (프로세스 매칭). 있으면 재사용해서 빠르게 종료.
   const existing = await detectExistingBrowser(profilePath);
-  if (existing.found) {
+  if (existing.found && existing.port !== undefined) {
     log('✅ Existing browser detected', 'success');
-    if (existing.pid !== undefined) {
-      await bringWindowToFront(existing.pid);
-    }
-    log('🔄 Brought Chrome window to front', 'success');
-    log('💬 Tell me what you want to do', 'info');
-
-    if (isVisualizeRequested() && existing.port !== undefined) {
-      await visualizePageReferences({ port: existing.port, profilePath });
-    }
+    await reuseExistingBrowser(existing.port, profilePath, existing.pid);
     return;
   }
 
-  // 2. 새 브라우저 실행 (기존 로직)
+  // 1b. Fallback: process detection may miss even when a browser is running.
+  //     Probe the CDP port and reuse it — NEVER launch (no new tab). This is
+  //     the top invariant: a running browser must never gain an extra tab.
+  const probedPort = await findRunningCdpPort(9227);
+  if (probedPort !== undefined) {
+    log('✅ Existing browser detected via CDP probe', 'success');
+    await reuseExistingBrowser(probedPort, profilePath);
+    return;
+  }
+
+  // 2. 새 브라우저 실행 (기존 로직) — 실행 중인 브라우저가 전혀 없을 때만.
   const chromeReady = await ensureChrome();
   if (!chromeReady) return;
 
@@ -343,12 +382,7 @@ const runWait = async (
 const runTabs = async (): Promise<void> => {
   const port = await resolveRunningPort();
   if (port === undefined) return;
-  const tabs = await listTabs(port);
-  const lines = tabs.map(
-    (tab) =>
-      `${tab.active ? '▶' : ' '} [${tab.index}] ${tab.title || '(제목 없음)'} — ${tab.url}`,
-  );
-  console.log(lines.join('\n') || 'No open tabs.');
+  await printOpenTabs(port);
 };
 
 /**

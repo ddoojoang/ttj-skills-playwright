@@ -118,9 +118,12 @@ export const detectExistingBrowser = async (
 
 /**
  * Bring the running Chrome window to the foreground, per platform.
- * Best-effort — the browser is already alive, so any failure is ignored.
+ * `pid` is optional: the browser may have been found by a CDP port probe (no
+ * pid). macOS activates by app name, so it works without a pid; Windows/Linux
+ * need a pid, so without one we skip silently. Best-effort — the browser is
+ * already alive, so any failure is ignored.
  */
-export const bringWindowToFront = async (pid: number): Promise<void> => {
+export const bringWindowToFront = async (pid?: number): Promise<void> => {
   const osType = getOsType();
   try {
     if (osType === 'macos') {
@@ -129,6 +132,8 @@ export const bringWindowToFront = async (pid: number): Promise<void> => {
       );
       return;
     }
+    // Windows / Linux focusing is pid-based; without a pid, skip quietly.
+    if (pid === undefined) return;
     if (osType === 'windows') {
       await execCommand(
         `powershell -NoProfile -Command "$p = Get-Process -Id ${pid} -ErrorAction SilentlyContinue; if ($p -and $p.MainWindowHandle -ne 0) { Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class TtjWin { [DllImport(\\"user32.dll\\")] public static extern bool SetForegroundWindow(IntPtr h); [DllImport(\\"user32.dll\\")] public static extern bool ShowWindow(IntPtr h, int c); }'; [TtjWin]::ShowWindow($p.MainWindowHandle, 9) | Out-Null; [TtjWin]::SetForegroundWindow($p.MainWindowHandle) | Out-Null }"`,

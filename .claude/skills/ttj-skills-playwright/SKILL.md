@@ -36,6 +36,14 @@ Launches a dedicated Chrome (CDP port 9227, fixed profile `~/.ttj-skills-playwri
 
 **After the user opens the browser with this skill, every browser action MUST use the commands below only.**
 
+## 🚨 On launch, if a browser already exists: report tabs, don't touch them
+
+When the skill is invoked (bare `ttj-skills-playwright`, no subcommand) and a browser is already running, the CLI **reuses it and never opens a new tab**. It brings the window to the front and prints the currently open tabs to stdout (`▶ [n] title — url`), ending with `✅ Reused the existing browser — no new tab was opened`. When you see this:
+
+1. **Do NOT** run `goto` / open a new tab / launch anything on your own initiative.
+2. **Summarize the open tabs in the user's language** ("현재 이런 페이지들이 열려 있어요: …").
+3. **Wait for the user's next instruction** before acting on any tab.
+
 ## 🚨 Preserve the existing browser and tabs
 
 - Treat the user's currently open browser windows and tabs as state that must be preserved.

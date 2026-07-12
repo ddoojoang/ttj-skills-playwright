@@ -10,9 +10,12 @@ import type { BrowserConfig, VersionInfo, ExistingBrowser } from './types.js';
 export declare const detectExistingBrowser: (expectedProfilePath: string) => Promise<ExistingBrowser>;
 /**
  * Bring the running Chrome window to the foreground, per platform.
- * Best-effort — the browser is already alive, so any failure is ignored.
+ * `pid` is optional: the browser may have been found by a CDP port probe (no
+ * pid). macOS activates by app name, so it works without a pid; Windows/Linux
+ * need a pid, so without one we skip silently. Best-effort — the browser is
+ * already alive, so any failure is ignored.
  */
-export declare const bringWindowToFront: (pid: number) => Promise<void>;
+export declare const bringWindowToFront: (pid?: number) => Promise<void>;
 /**
  * Launch Chrome directly as a detached child process.
  * Chrome natively supports --remote-debugging-port, so we skip playwright-cli.
