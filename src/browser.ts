@@ -328,39 +328,53 @@ const OVERLAY_JS = `() => {
     style.className = 'pw-ref-style';
     style.textContent = \`
       .pw-ref-badge {
-        position:absolute;width:18px;height:18px;border-radius:50%;
-        background:rgba(220,38,38,0.92);color:#fff;font-size:9px;font-weight:bold;
+        position:absolute;min-width:18px;height:18px;padding:0 3px;border-radius:9px;
+        background:rgba(37,99,235,0.95);color:#fff;font-size:9px;font-weight:bold;
         display:flex;align-items:center;justify-content:center;
         z-index:999999;pointer-events:auto;cursor:pointer;font-family:monospace;
         box-shadow:0 1px 3px rgba(0,0,0,0.4);border:1px solid rgba(255,255,255,0.5);
         line-height:1;transition:transform 0.1s;
       }
-      .pw-ref-badge:hover {
-        transform:scale(1.2);background:rgba(30,64,175,0.95);
+      .pw-ref-badge.pw-ref-region {
+        background:rgba(220,38,38,0.97);border-radius:4px;height:20px;font-size:10px;
+        z-index:1000000;
       }
-      .pw-ref-badge.pw-copied {
-        background:rgba(22,163,74,0.95);
-      }
+      .pw-ref-badge:hover { transform:scale(1.25); }
+      .pw-ref-badge.pw-copied { background:rgba(22,163,74,0.95)!important; }
       .pw-ref-overlay {
-        position:absolute;background:rgba(220,38,38,0.92);color:#fff;
+        position:absolute;background:rgba(37,99,235,0.95);color:#fff;
         font-size:10px;font-weight:bold;padding:2px 5px;border-radius:4px;
-        z-index:999999;pointer-events:none;
+        z-index:1000002;pointer-events:none;
         font-family:monospace;line-height:14px;white-space:nowrap;
         box-shadow:0 2px 6px rgba(0,0,0,0.4);border:1px solid rgba(255,255,255,0.3);
         max-width:none;overflow:visible;text-overflow:unset;
         user-select:none;display:none;
       }
+      .pw-ref-overlay.pw-ref-region { background:rgba(220,38,38,0.97); }
+      /* Detail elements: thin blue outline */
       .pw-ref-highlight {
-        outline:1.5px solid rgba(220,38,38,0.5)!important;outline-offset:1px;
+        outline:1.5px solid rgba(37,99,235,0.45)!important;outline-offset:1px;
       }
       .pw-ref-highlight.pw-ref-focused {
-        outline:3px solid rgba(220,38,38,0.9)!important;outline-offset:2px;
+        outline:3px solid rgba(37,99,235,0.95)!important;outline-offset:2px;
       }
-      .pw-ref-highlight.pw-ref-dimmed {
+      /* Region elements: bolder red outline */
+      .pw-ref-region-outline {
+        outline:2px solid rgba(220,38,38,0.55)!important;outline-offset:-1px;
+      }
+      .pw-ref-highlight.pw-ref-dimmed, .pw-ref-region-outline.pw-ref-dimmed {
         outline-color:transparent!important;
       }
       .pw-ref-badge.pw-ref-dimmed {
         opacity:0!important;pointer-events:none!important;
+      }
+      /* Filled translucent box shown when hovering a region badge — always
+         visible even for very large regions (fixes hard-to-see red box). */
+      .pw-ref-region-fill {
+        position:absolute;z-index:999998;pointer-events:none;display:none;
+        background:rgba(220,38,38,0.14);
+        border:3px solid rgba(220,38,38,0.95);
+        box-shadow:0 0 0 2px rgba(255,255,255,0.5) inset;
       }
       .pw-ref-tooltip {
         position:fixed;top:10px;left:50%;transform:translateX(-50%);
@@ -460,41 +474,79 @@ const OVERLAY_JS = `() => {
       return base;
     };
 
-    const sels = 'div,a[href],button,input,select,textarea,[role=button],[role=link],[role=tab],[role=menuitem]';
-    let idx = 1;
-
     const INTERACTIVE = new Set(['a', 'button', 'input', 'select', 'textarea']);
+    const REGION_TAGS = new Set(['section','header','footer','nav','main','aside','article','form','ul','ol']);
     const hasDirectText = (node) =>
       Array.from(node.childNodes).some(
         c => c.nodeType === 3 && c.textContent.trim().length > 0,
       );
-    // A div/span is worth badging only if it is a real visible box, not a
-    // transparent layout wrapper (which would place a badge in empty margin).
     const isVisibleBox = (node, style) =>
       hasDirectText(node) ||
       node.querySelector('img,svg,video,canvas,picture') !== null ||
       (style.backgroundImage && style.backgroundImage !== 'none') ||
       (style.borderTopWidth !== '0px' && style.borderStyle !== 'none') ||
       (style.boxShadow && style.boxShadow !== 'none');
-
-    document.querySelectorAll(sels).forEach(el => {
-      const rect = el.getBoundingClientRect();
-      if (rect.width < 8 || rect.height < 8) return;
-      // Skip elements pushed off-screen (e.g. sr-only / skip links at 0,0 or -9999).
-      if (rect.right <= 0 || rect.bottom <= 0 || rect.left < -1000) return;
+    const docW = document.documentElement.clientWidth;
+    // True if the element is scrolled/clipped out of an overflow ancestor
+    // (e.g. off-screen items of a horizontal carousel).
+    const isClipped = (el, r) => {
+      let p = el.parentElement;
+      while (p && p !== document.body) {
+        const ps = window.getComputedStyle(p);
+        if (/(hidden|scroll|auto|clip)/.test(ps.overflow + ps.overflowX + ps.overflowY)) {
+          const pr = p.getBoundingClientRect();
+          if (r.right <= pr.left + 1 || r.left >= pr.right - 1 ||
+              r.bottom <= pr.top + 1 || r.top >= pr.bottom - 1) return true;
+        }
+        p = p.parentElement;
+      }
+      return false;
+    };
+    const onScreenVisible = (el) => {
+      const r = el.getBoundingClientRect();
+      if (r.width < 8 || r.height < 8) return false;
+      if (r.right <= 0 || r.bottom <= 0 || r.left < -1000) return false;
+      if (r.left >= docW) return false;                 // off to the right of the layout
       const cs = window.getComputedStyle(el);
-      if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') return;
-      // Clipped/collapsed accessibility elements.
-      if (cs.clipPath && cs.clipPath.includes('inset(50%)')) return;
-      if (cs.clip === 'rect(0px, 0px, 0px, 0px)') return;
+      if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') return false;
+      if (cs.clipPath && cs.clipPath.includes('inset(50%)')) return false;
+      if (cs.clip === 'rect(0px, 0px, 0px, 0px)') return false;
+      if (isClipped(el, r)) return false;
+      return true;
+    };
 
+    const pageArea = Math.max(1, document.documentElement.scrollWidth * document.documentElement.scrollHeight);
+
+    // ---- Tier 1: top-most parent REGIONS (red) — the big-picture blocks ----
+    const regionCandidates = Array.from(document.querySelectorAll('body *')).filter(el => {
+      if (!onScreenVisible(el)) return false;
+      const r = el.getBoundingClientRect();
+      const area = r.width * r.height;
+      if (area < 45000) return false;              // too small to be a section
+      if (area / pageArea > 0.55) return false;    // page-wide wrapper, not a region
+      const childEls = el.children.length;
+      return REGION_TAGS.has(el.tagName.toLowerCase()) || childEls >= 4;
+    });
+    // Keep only top-most (a region nested inside another region is dropped).
+    const regions = regionCandidates
+      .filter(el => !regionCandidates.some(o => o !== el && o.contains(el)))
+      .sort((a, b) => {
+        const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
+        return (rb.width * rb.height) - (ra.width * ra.height);
+      })
+      .slice(0, 16);
+    const regionSet = new Set(regions);
+
+    let ridx = 1;
+    let didx = 1;
+
+    // Shared marker builder. kind = 'region' | 'detail'.
+    const mark = (el, kind) => {
+      const rect = el.getBoundingClientRect();
+      const isRegion = kind === 'region';
+      const ref = (isRegion ? 'R' : 'e') + (isRegion ? ridx : didx);
+      const refId = 'pw-ref-' + ref;
       const tag = el.tagName.toLowerCase();
-
-      // Interactive elements always get a badge; structural div/span wrappers
-      // only when they are an actual visible box (avoids floating badges).
-      const interactive =
-        INTERACTIVE.has(tag) || el.hasAttribute('role');
-      if (!interactive && !isVisibleBox(el, cs)) return;
 
       let extra = '';
       if (tag === 'a') {
@@ -508,55 +560,58 @@ const OVERLAY_JS = `() => {
         const ph = el.placeholder ? ' "' + el.placeholder + '"' : '';
         extra = ' [textarea' + ph + ']';
       }
-
       const aria = el.getAttribute('aria-label');
       const ariaStr = aria ? ' @"' + aria + '"' : '';
-
-      const shortUniqueSelector = getShortUniqueSelector(el);
-      const labelText = 'e' + idx + ' ' + shortUniqueSelector + extra + ariaStr;
+      const labelText = ref + ' ' + getShortUniqueSelector(el) + extra + ariaStr;
       const copyStr = getUniqueSelector(el);
-      const refId = 'pw-ref-' + idx;
 
       const badge = document.createElement('div');
-      badge.className = 'pw-ref-badge';
-      badge.textContent = 'e' + idx;
+      badge.className = 'pw-ref-badge' + (isRegion ? ' pw-ref-region' : '');
+      badge.textContent = ref;
       badge.dataset.refId = refId;
-      // Pin the badge exactly to the element's top-left corner.
       badge.style.left = (rect.left + window.scrollX) + 'px';
       badge.style.top = (rect.top + window.scrollY) + 'px';
       document.body.appendChild(badge);
 
-      el.classList.add('pw-ref-highlight');
-
-      const labelLeft = rect.left + window.scrollX - 8;
-      const labelTop = (rect.top + window.scrollY - 28 < window.scrollY)
-        ? rect.top + window.scrollY + 14
-        : rect.top + window.scrollY - 28;
+      el.classList.add(isRegion ? 'pw-ref-region-outline' : 'pw-ref-highlight');
 
       const label = document.createElement('div');
-      label.className = 'pw-ref-overlay';
+      label.className = 'pw-ref-overlay' + (isRegion ? ' pw-ref-region' : '');
       label.textContent = labelText;
-      label.style.left = labelLeft + 'px';
-      label.style.top = labelTop + 'px';
-      label.dataset.refId = refId;
-      label.dataset.selector = copyStr;
+      label.style.left = (rect.left + window.scrollX) + 'px';
+      label.style.top = ((rect.top + window.scrollY - 22 < window.scrollY)
+        ? rect.top + window.scrollY + 20
+        : rect.top + window.scrollY - 20) + 'px';
       document.body.appendChild(label);
 
+      // Region hover: show a filled translucent box so even huge regions are
+      // clearly visible (thin outlines on big regions are easy to miss).
+      let fill = null;
+      if (isRegion) {
+        fill = document.createElement('div');
+        fill.className = 'pw-ref-region-fill';
+        fill.style.left = (rect.left + window.scrollX) + 'px';
+        fill.style.top = (rect.top + window.scrollY) + 'px';
+        fill.style.width = rect.width + 'px';
+        fill.style.height = rect.height + 'px';
+        document.body.appendChild(fill);
+      }
+
       badge.addEventListener('mouseenter', () => {
-        document.querySelectorAll('.pw-ref-highlight').forEach(e => e.classList.add('pw-ref-dimmed'));
+        document.querySelectorAll('.pw-ref-highlight,.pw-ref-region-outline').forEach(e => e.classList.add('pw-ref-dimmed'));
         el.classList.remove('pw-ref-dimmed');
         el.classList.add('pw-ref-focused');
         document.querySelectorAll('.pw-ref-badge').forEach(b => b.classList.add('pw-ref-dimmed'));
         badge.classList.remove('pw-ref-dimmed');
         label.style.display = 'block';
+        if (fill) fill.style.display = 'block';
       });
-
       badge.addEventListener('mouseleave', () => {
         document.querySelectorAll('.pw-ref-dimmed').forEach(e => e.classList.remove('pw-ref-dimmed'));
         el.classList.remove('pw-ref-focused');
         label.style.display = 'none';
+        if (fill) fill.style.display = 'none';
       });
-
       badge.addEventListener('click', (ev) => {
         ev.stopPropagation();
         ev.preventDefault();
@@ -573,9 +628,38 @@ const OVERLAY_JS = `() => {
         });
       });
 
-      idx++;
+      if (isRegion) ridx++; else didx++;
+    };
+
+    // Region rectangles (document coords) — a detail must sit inside one of
+    // these, so carousel items scrolled out into the margin are excluded.
+    const regionRects = regions.map(el => {
+      const r = el.getBoundingClientRect();
+      return { left: r.left + window.scrollX, top: r.top + window.scrollY,
+               right: r.right + window.scrollX, bottom: r.bottom + window.scrollY };
     });
-    return idx - 1;
+    const centerInsideRegion = (r) => {
+      const cx = r.left + window.scrollX + r.width / 2;
+      const cy = r.top + window.scrollY + r.height / 2;
+      return regionRects.some(q => cx >= q.left && cx <= q.right && cy >= q.top && cy <= q.bottom);
+    };
+
+    regions.forEach(el => mark(el, 'region'));
+
+    // ---- Tier 2: DETAIL elements inside the regions (blue) ----
+    const sels = 'div,span,a[href],button,input,select,textarea,[role=button],[role=link],[role=tab],[role=menuitem]';
+    document.querySelectorAll(sels).forEach(el => {
+      if (regionSet.has(el)) return;              // regions are tier 1
+      if (!onScreenVisible(el)) return;
+      if (regionRects.length && !centerInsideRegion(el.getBoundingClientRect())) return;
+      const tag = el.tagName.toLowerCase();
+      const cs = window.getComputedStyle(el);
+      const interactive = INTERACTIVE.has(tag) || el.hasAttribute('role');
+      if (!interactive && !isVisibleBox(el, cs)) return;
+      mark(el, 'detail');
+    });
+
+    return { regions: ridx - 1, details: didx - 1 };
   }`;
 
 /**

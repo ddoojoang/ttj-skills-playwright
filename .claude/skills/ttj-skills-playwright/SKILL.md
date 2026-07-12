@@ -125,20 +125,24 @@ ttj-skills-playwright clear                           # remove visualization bad
 
 **Trigger**: "show me the elements", "visualize the page", "show the HTML structure", "analyze the elements", "요소 보여줘", "요소 분석해줘", "HTML 구조 보여줘", "페이지 시각화해줘", "要素を見せて".
 
-`--visualize`: auto-scrolls (to trigger lazy-load), overlays numbered red badges (e1, e2, …) **pinned exactly to each element's top-left corner** + outlines on every visible element (div/button/link/input…), and saves a full-page screenshot to a temp folder (**exact path is printed in the log line "📸 Screenshot saved:"** — Read that path). Hovering a badge shows its selector label; clicking copies a unique CSS selector to the clipboard.
+`--visualize` shows two tiers, **each badge pinned exactly to its element's top-left corner**:
+- 🔴 **Regions** (`R1, R2, …`, red) — the top-most parent blocks (big-picture sections: header, search, each content section, footer). Hovering a region badge fills it with a translucent red box so even large regions are clearly visible.
+- 🔵 **Details** (`e1, e2, …`, blue) — the individual elements inside those regions (links, buttons, inputs, cards). Off-screen/clipped carousel items and empty layout wrappers are excluded, so badges only mark real visible content.
+
+It auto-scrolls (to trigger lazy-load), then saves a full-page screenshot to a temp folder (**exact path is printed in the log line "📸 Screenshot saved:"** — Read that path). Hovering a badge shows its selector label; clicking copies a unique CSS selector to the clipboard.
 
 **AI procedure:**
 1. Run `ttj-skills-playwright --visualize`
 2. Read the screenshot path from the "📸 Screenshot saved:" log line and show it to the user
-3. Output an element classification table:
+3. Output a two-tier table — red regions (R) with the blue details (e) inside each:
 
-| Area | Refs | Elements |
-|------|------|----------|
-| Header | e1~e5 | logo, nav, search |
-| Main | e6~e15 | product cards ×3, buttons |
-| Footer | e16~e20 | links, copyright |
+| Region | Ref | Details inside |
+|--------|-----|----------------|
+| Header | R1 | e1~e8 — logo, nav, search |
+| Deals section | R2 | e9~e20 — banners, cards |
+| Footer | R3 | e21~e40 — links, copyright |
 
-4. The user can copy a badge's ref (e.g. `e7`) or click a badge to copy its selector, then ask you to act on it.
+4. The user can copy a badge's ref (`R2`, `e7`) or click a badge to copy its selector, then ask you to act on it.
 
 **Overlay rule**: each `--visualize` clears the previous overlay and shows only the new one. Badges/boxes stay on the page, so run `ttj-skills-playwright clear` for a clean screen/screenshot (no reload needed).
 

@@ -101,10 +101,10 @@ export const evalInActivePage = (
   code: string,
 ): Promise<unknown> => withActivePage(port, (page) => page.evaluate(code));
 
-/** Remove all visualize/crawl overlays (badges, boxes, labels) from the tab. */
+/** Remove all visualization overlays (badges, boxes, labels) from the tab. */
 const CLEAR_OVERLAY_JS = `() => {
-  document.querySelectorAll('.pw-ref-overlay,.pw-ref-style,.pw-ref-svg,.pw-ref-badge,.pw-ref-tooltip').forEach(e => e.remove());
-  document.querySelectorAll('.pw-ref-highlight').forEach(e => e.classList.remove('pw-ref-highlight','pw-ref-focused','pw-ref-dimmed','pw-ref-list'));
+  document.querySelectorAll('.pw-ref-overlay,.pw-ref-style,.pw-ref-svg,.pw-ref-badge,.pw-ref-tooltip,.pw-ref-region-fill').forEach(e => e.remove());
+  document.querySelectorAll('.pw-ref-highlight,.pw-ref-region-outline').forEach(e => e.classList.remove('pw-ref-highlight','pw-ref-region-outline','pw-ref-focused','pw-ref-dimmed'));
   return true;
 }`;
 
