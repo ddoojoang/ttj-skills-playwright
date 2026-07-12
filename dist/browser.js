@@ -269,20 +269,16 @@ const OVERLAY_JS = `() => {
     style.textContent = \`
       .pw-ref-badge {
         position:absolute;min-width:18px;height:18px;padding:0 3px;border-radius:9px;
-        background:rgba(37,99,235,0.95);color:#fff;font-size:9px;font-weight:bold;
+        background:rgba(220,38,38,0.95);color:#fff;font-size:9px;font-weight:bold;
         display:flex;align-items:center;justify-content:center;
         z-index:999999;pointer-events:auto;cursor:pointer;font-family:monospace;
         box-shadow:0 1px 3px rgba(0,0,0,0.4);border:1px solid rgba(255,255,255,0.5);
         line-height:1;transition:transform 0.1s;
       }
-      .pw-ref-badge.pw-ref-region {
-        background:rgba(220,38,38,0.97);border-radius:4px;height:20px;font-size:10px;
-        z-index:1000000;
-      }
       .pw-ref-badge:hover { transform:scale(1.25); }
       .pw-ref-badge.pw-copied { background:rgba(22,163,74,0.95)!important; }
       .pw-ref-overlay {
-        position:absolute;background:rgba(37,99,235,0.95);color:#fff;
+        position:absolute;background:rgba(220,38,38,0.95);color:#fff;
         font-size:10px;font-weight:bold;padding:2px 5px;border-radius:4px;
         z-index:1000002;pointer-events:none;
         font-family:monospace;line-height:14px;white-space:nowrap;
@@ -290,26 +286,20 @@ const OVERLAY_JS = `() => {
         max-width:none;overflow:visible;text-overflow:unset;
         user-select:none;display:none;
       }
-      .pw-ref-overlay.pw-ref-region { background:rgba(220,38,38,0.97); }
-      /* Detail elements: thin blue outline */
       .pw-ref-highlight {
-        outline:1.5px solid rgba(37,99,235,0.45)!important;outline-offset:1px;
+        outline:1.5px solid rgba(220,38,38,0.5)!important;outline-offset:1px;
       }
       .pw-ref-highlight.pw-ref-focused {
-        outline:3px solid rgba(37,99,235,0.95)!important;outline-offset:2px;
+        outline:3px solid rgba(220,38,38,0.95)!important;outline-offset:2px;
       }
-      /* Region elements: bolder red outline */
-      .pw-ref-region-outline {
-        outline:2px solid rgba(220,38,38,0.55)!important;outline-offset:-1px;
-      }
-      .pw-ref-highlight.pw-ref-dimmed, .pw-ref-region-outline.pw-ref-dimmed {
+      .pw-ref-highlight.pw-ref-dimmed {
         outline-color:transparent!important;
       }
       .pw-ref-badge.pw-ref-dimmed {
         opacity:0!important;pointer-events:none!important;
       }
-      /* Filled translucent box shown when hovering a region badge — always
-         visible even for very large regions (fixes hard-to-see red box). */
+      /* Filled translucent box shown on hover so the element box is
+         unmistakable, even for large elements. */
       .pw-ref-region-fill {
         position:absolute;z-index:999998;pointer-events:none;display:none;
         background:rgba(220,38,38,0.14);
@@ -415,7 +405,6 @@ const OVERLAY_JS = `() => {
     };
 
     const INTERACTIVE = new Set(['a', 'button', 'input', 'select', 'textarea']);
-    const REGION_TAGS = new Set(['section','header','footer','nav','main','aside','article','form','ul','ol']);
     const hasDirectText = (node) =>
       Array.from(node.childNodes).some(
         c => c.nodeType === 3 && c.textContent.trim().length > 0,
@@ -455,37 +444,14 @@ const OVERLAY_JS = `() => {
       return true;
     };
 
-    const pageArea = Math.max(1, document.documentElement.scrollWidth * document.documentElement.scrollHeight);
+    let idx = 1;
 
-    // ---- Tier 1: top-most parent REGIONS (red) — the big-picture blocks ----
-    const regionCandidates = Array.from(document.querySelectorAll('body *')).filter(el => {
-      if (!onScreenVisible(el)) return false;
-      const r = el.getBoundingClientRect();
-      const area = r.width * r.height;
-      if (area < 45000) return false;              // too small to be a section
-      if (area / pageArea > 0.55) return false;    // page-wide wrapper, not a region
-      const childEls = el.children.length;
-      return REGION_TAGS.has(el.tagName.toLowerCase()) || childEls >= 4;
-    });
-    // Keep only top-most (a region nested inside another region is dropped).
-    const regions = regionCandidates
-      .filter(el => !regionCandidates.some(o => o !== el && o.contains(el)))
-      .sort((a, b) => {
-        const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
-        return (rb.width * rb.height) - (ra.width * ra.height);
-      })
-      .slice(0, 16);
-    const regionSet = new Set(regions);
-
-    let ridx = 1;
-    let didx = 1;
-
-    // Shared marker builder. kind = 'region' | 'detail'.
-    const mark = (el, kind) => {
+    // Single-tier RED marker: badge (e1, e2, ...) pinned to the element's
+    // top-left corner + red outline. Hover isolates this element (dims the
+    // rest) and shows a translucent red fill so the box is unmistakable.
+    const mark = (el) => {
       const rect = el.getBoundingClientRect();
-      const isRegion = kind === 'region';
-      const ref = (isRegion ? 'R' : 'e') + (isRegion ? ridx : didx);
-      const refId = 'pw-ref-' + ref;
+      const ref = 'e' + idx;
       const tag = el.tagName.toLowerCase();
 
       let extra = '';
@@ -506,17 +472,16 @@ const OVERLAY_JS = `() => {
       const copyStr = getUniqueSelector(el);
 
       const badge = document.createElement('div');
-      badge.className = 'pw-ref-badge' + (isRegion ? ' pw-ref-region' : '');
+      badge.className = 'pw-ref-badge';
       badge.textContent = ref;
-      badge.dataset.refId = refId;
       badge.style.left = (rect.left + window.scrollX) + 'px';
       badge.style.top = (rect.top + window.scrollY) + 'px';
       document.body.appendChild(badge);
 
-      el.classList.add(isRegion ? 'pw-ref-region-outline' : 'pw-ref-highlight');
+      el.classList.add('pw-ref-highlight');
 
       const label = document.createElement('div');
-      label.className = 'pw-ref-overlay' + (isRegion ? ' pw-ref-region' : '');
+      label.className = 'pw-ref-overlay';
       label.textContent = labelText;
       label.style.left = (rect.left + window.scrollX) + 'px';
       label.style.top = ((rect.top + window.scrollY - 22 < window.scrollY)
@@ -524,33 +489,28 @@ const OVERLAY_JS = `() => {
         : rect.top + window.scrollY - 20) + 'px';
       document.body.appendChild(label);
 
-      // Region hover: show a filled translucent box so even huge regions are
-      // clearly visible (thin outlines on big regions are easy to miss).
-      let fill = null;
-      if (isRegion) {
-        fill = document.createElement('div');
-        fill.className = 'pw-ref-region-fill';
-        fill.style.left = (rect.left + window.scrollX) + 'px';
-        fill.style.top = (rect.top + window.scrollY) + 'px';
-        fill.style.width = rect.width + 'px';
-        fill.style.height = rect.height + 'px';
-        document.body.appendChild(fill);
-      }
+      const fill = document.createElement('div');
+      fill.className = 'pw-ref-region-fill';
+      fill.style.left = (rect.left + window.scrollX) + 'px';
+      fill.style.top = (rect.top + window.scrollY) + 'px';
+      fill.style.width = rect.width + 'px';
+      fill.style.height = rect.height + 'px';
+      document.body.appendChild(fill);
 
       badge.addEventListener('mouseenter', () => {
-        document.querySelectorAll('.pw-ref-highlight,.pw-ref-region-outline').forEach(e => e.classList.add('pw-ref-dimmed'));
+        document.querySelectorAll('.pw-ref-highlight').forEach(e => e.classList.add('pw-ref-dimmed'));
         el.classList.remove('pw-ref-dimmed');
         el.classList.add('pw-ref-focused');
         document.querySelectorAll('.pw-ref-badge').forEach(b => b.classList.add('pw-ref-dimmed'));
         badge.classList.remove('pw-ref-dimmed');
         label.style.display = 'block';
-        if (fill) fill.style.display = 'block';
+        fill.style.display = 'block';
       });
       badge.addEventListener('mouseleave', () => {
         document.querySelectorAll('.pw-ref-dimmed').forEach(e => e.classList.remove('pw-ref-dimmed'));
         el.classList.remove('pw-ref-focused');
         label.style.display = 'none';
-        if (fill) fill.style.display = 'none';
+        fill.style.display = 'none';
       });
       badge.addEventListener('click', (ev) => {
         ev.stopPropagation();
@@ -568,38 +528,22 @@ const OVERLAY_JS = `() => {
         });
       });
 
-      if (isRegion) ridx++; else didx++;
+      idx++;
     };
 
-    // Region rectangles (document coords) — a detail must sit inside one of
-    // these, so carousel items scrolled out into the margin are excluded.
-    const regionRects = regions.map(el => {
-      const r = el.getBoundingClientRect();
-      return { left: r.left + window.scrollX, top: r.top + window.scrollY,
-               right: r.right + window.scrollX, bottom: r.bottom + window.scrollY };
-    });
-    const centerInsideRegion = (r) => {
-      const cx = r.left + window.scrollX + r.width / 2;
-      const cy = r.top + window.scrollY + r.height / 2;
-      return regionRects.some(q => cx >= q.left && cx <= q.right && cy >= q.top && cy <= q.bottom);
-    };
-
-    regions.forEach(el => mark(el, 'region'));
-
-    // ---- Tier 2: DETAIL elements inside the regions (blue) ----
+    // Badge every visible content box + interactive element (skip transparent
+    // layout wrappers and off-screen/clipped elements — see onScreenVisible).
     const sels = 'div,span,a[href],button,input,select,textarea,[role=button],[role=link],[role=tab],[role=menuitem]';
     document.querySelectorAll(sels).forEach(el => {
-      if (regionSet.has(el)) return;              // regions are tier 1
       if (!onScreenVisible(el)) return;
-      if (regionRects.length && !centerInsideRegion(el.getBoundingClientRect())) return;
       const tag = el.tagName.toLowerCase();
       const cs = window.getComputedStyle(el);
       const interactive = INTERACTIVE.has(tag) || el.hasAttribute('role');
       if (!interactive && !isVisibleBox(el, cs)) return;
-      mark(el, 'detail');
+      mark(el);
     });
 
-    return { regions: ridx - 1, details: didx - 1 };
+    return idx - 1;
   }`;
 /**
  * Visualize every element on the currently open page: connect directly over
