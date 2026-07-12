@@ -49,8 +49,14 @@ ttj-skills-browser tabs
 ttj-skills-browser tab 2
 ttj-skills-browser screenshot /tmp/shot.png --full
 
-# 페이지 요소 시각화 (배지 오버레이 + 전체 스크린샷 → /tmp/ttj-refs-visual.png)
+# 페이지 요소 시각화 (모든 요소에 배지 오버레이 + 전체 스크린샷)
 ttj-skills-browser --visualize
+
+# 크롤링 대상 분석 (반복 목록·레이아웃 영역 탐지 + JSON)
+ttj-skills-browser crawl
+
+# 오버레이 제거
+ttj-skills-browser clear
 ```
 
 모든 원샷 명령은 실행 중인 브라우저를 자동 감지하고, 여러 탭 중 화면에 보이는 활성 탭을

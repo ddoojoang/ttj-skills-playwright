@@ -37,6 +37,7 @@ npm 패키지: `npm install -g ttj-skills-browser` · 명령: `/ttj-skills-brows
 | 스크린샷 | `ttj-skills-browser screenshot [경로] [--full]` |
 | 요소 시각화 | `ttj-skills-browser --visualize` |
 | 크롤링 대상 분석 | `ttj-skills-browser crawl` |
+| 오버레이 제거 (배지·박스 지우기) | `ttj-skills-browser clear` |
 
 모든 명령은 실행 중인 브라우저를 자동 감지해 CDP로 직접 연결하고, **화면에 보이는 활성 탭**을 자동 선택하며, **브라우저가 닫혀 있으면 자동으로 재실행 후 작업을 계속한다.**
 
@@ -172,7 +173,8 @@ ttj-skills-browser screenshot /tmp/full.png --full # 전체 페이지
    데이터 추출을 검증한 뒤 크롤링을 진행한다 (코드 산출물 요청 시 아래 개발 규칙 적용)
 
 **시각화 규칙**: `crawl`과 `--visualize`는 실행할 때마다 **기존 오버레이를 모두 제거하고
-새것만 표시**한다 (같은 배지 클래스 공유 — 겹쳐 보이는 일 없음).
+새것만 표시**한다 (같은 배지 클래스 공유 — 겹쳐 보이는 일 없음). 배지·박스는 페이지에 남으므로,
+깨끗한 화면/스크린샷이 필요하면 `ttj-skills-browser clear`로 지운다 (페이지 새로고침 없이).
 
 ## 개발 규칙 (자동화 스크립트 "코드 산출물" 요청 시에만)
 

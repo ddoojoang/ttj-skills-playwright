@@ -32,6 +32,7 @@ import {
   waitInActivePage,
   listTabs,
   activateTab,
+  clearOverlays,
 } from './cdp.js';
 
 /**
@@ -57,6 +58,7 @@ Commands:
   tabs                     List open tabs with indexes
   tab <n>                  Bring tab n to the front
   crawl                    Detect crawlable repeating structures (badges + JSON)
+  clear                    Remove visualize/crawl overlays from the page
   screenshot [path] [--full]  Capture the active tab (default: <tmpdir>/ttj-screenshot.png)
 
 Options:
@@ -349,6 +351,16 @@ const runCrawl = async (): Promise<void> => {
 };
 
 /**
+ * `clear` — remove visualize/crawl overlays from the active tab.
+ */
+const runClear = async (): Promise<void> => {
+  const port = await resolveRunningPort();
+  if (port === undefined) return;
+  await clearOverlays(port);
+  log('✅ 오버레이 제거 완료', 'success');
+};
+
+/**
  * `screenshot [path] [--full]` — capture the active tab over CDP.
  */
 const runScreenshot = async (args: readonly string[]): Promise<void> => {
@@ -377,6 +389,7 @@ const SUBCOMMANDS: Record<string, (() => Promise<void>) | undefined> = {
   tabs: () => runTabs(),
   tab: () => runTab(commandArgs[0]),
   crawl: () => runCrawl(),
+  clear: () => runClear(),
   screenshot: () => runScreenshot(commandArgs),
 };
 

@@ -101,6 +101,18 @@ export const evalInActivePage = (
   code: string,
 ): Promise<unknown> => withActivePage(port, (page) => page.evaluate(code));
 
+/** Remove all visualize/crawl overlays (badges, boxes, labels) from the tab. */
+const CLEAR_OVERLAY_JS = `() => {
+  document.querySelectorAll('.pw-ref-overlay,.pw-ref-style,.pw-ref-svg,.pw-ref-badge,.pw-ref-tooltip').forEach(e => e.remove());
+  document.querySelectorAll('.pw-ref-highlight').forEach(e => e.classList.remove('pw-ref-highlight','pw-ref-focused','pw-ref-dimmed','pw-ref-list'));
+  return true;
+}`;
+
+export const clearOverlays = (port: number): Promise<void> =>
+  withActivePage(port, async (page) => {
+    await page.evaluate(`(${CLEAR_OVERLAY_JS})()`);
+  });
+
 /**
  * Navigate the active tab and wait for the load event. Returns the title.
  */

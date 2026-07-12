@@ -10,7 +10,7 @@ import { log } from './logger.js';
 import { getProfilePath, findAvailablePort, checkPortAvailable, } from './utils.js';
 import { detectChrome, ensureProfile } from './detector.js';
 import { launchBrowser, autoUpdateIfNeeded, verifyBrowserReady, visualizePageReferences, visualizeCrawlTargets, detectExistingBrowser, bringWindowToFront, } from './browser.js';
-import { evalInActivePage, gotoInActivePage, screenshotActivePage, clickInActivePage, typeInActivePage, waitInActivePage, listTabs, activateTab, } from './cdp.js';
+import { evalInActivePage, gotoInActivePage, screenshotActivePage, clickInActivePage, typeInActivePage, waitInActivePage, listTabs, activateTab, clearOverlays, } from './cdp.js';
 /**
  * Read the package version dynamically from package.json (ESM-safe).
  */
@@ -31,6 +31,7 @@ Commands:
   tabs                     List open tabs with indexes
   tab <n>                  Bring tab n to the front
   crawl                    Detect crawlable repeating structures (badges + JSON)
+  clear                    Remove visualize/crawl overlays from the page
   screenshot [path] [--full]  Capture the active tab (default: <tmpdir>/ttj-screenshot.png)
 
 Options:
@@ -281,6 +282,16 @@ const runCrawl = async () => {
     await visualizeCrawlTargets({ port, profilePath: getProfilePath() });
 };
 /**
+ * `clear` — remove visualize/crawl overlays from the active tab.
+ */
+const runClear = async () => {
+    const port = await resolveRunningPort();
+    if (port === undefined)
+        return;
+    await clearOverlays(port);
+    log('✅ 오버레이 제거 완료', 'success');
+};
+/**
  * `screenshot [path] [--full]` — capture the active tab over CDP.
  */
 const runScreenshot = async (args) => {
@@ -306,6 +317,7 @@ const SUBCOMMANDS = {
     tabs: () => runTabs(),
     tab: () => runTab(commandArgs[0]),
     crawl: () => runCrawl(),
+    clear: () => runClear(),
     screenshot: () => runScreenshot(commandArgs),
 };
 const dispatch = () => (command !== undefined && SUBCOMMANDS[command]?.()) || main();

@@ -1,6 +1,6 @@
 {
   "name": "ttj-skills-browser",
-  "version": "1.2.16",
+  "version": "1.2.17",
   "description": "ttj-skills-browser - Dedicated CDP browser with one-shot commands (eval/goto/screenshot) and page reference visualization",
   "type": "module",
   "bin": {
