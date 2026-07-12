@@ -542,6 +542,9 @@ const CRAWL_SCAN_JS = `() => {
     .pw-ref-badge:hover { transform:scale(1.15);background:rgba(30,64,175,0.95); }
     .pw-ref-badge.pw-copied { background:rgba(22,163,74,0.95); }
     .pw-ref-badge.pw-ref-dimmed { opacity:0!important;pointer-events:none!important; }
+    .pw-ref-badge-list { background:rgba(37,99,235,0.97); }
+    .pw-ref-list { outline-color:rgba(37,99,235,0.9)!important; }
+    .pw-ref-list.pw-ref-focused { outline-color:rgba(37,99,235,1)!important; }
     .pw-ref-overlay {
       position:absolute;background:rgba(220,38,38,0.92);color:#fff;
       font-size:10px;font-weight:bold;padding:2px 5px;border-radius:4px;
@@ -630,18 +633,55 @@ const CRAWL_SCAN_JS = `() => {
   };
 
   const level1 = sized.filter(p => !sized.some(other => other !== p && other.contains(p)));
-  const regions = level1.flatMap(l1 => sectionsOf(l1, 4));
+  const layoutRegions = level1.flatMap(l1 => sectionsOf(l1, 4));
 
-  return regions.map((region, i) => {
+  // AI-judged crawl targets: containers whose children repeat the same
+  // tag+class signature (product cards, article lists, review rows...). These
+  // are the highest-value crawl structures even if they are nested inside a
+  // layout section, so detect them independently.
+  const sigOf = (el) => el.tagName.toLowerCase() + cleanClasses(el).slice(0, 1).map(c => '.' + c).join('');
+  const listRegions = [];
+  document.querySelectorAll('body *').forEach(parent => {
+    if (parent.children.length < 3 || parent.closest('svg')) return;
+    if (!isEligible(parent)) return;
+    const r = parent.getBoundingClientRect();
+    if ((r.width * r.height) / docArea > 0.6) return;
+    const groups = {};
+    Array.from(parent.children).forEach(child => {
+      const s = sigOf(child);
+      (groups[s] = groups[s] || []).push(child);
+    });
+    const biggest = Object.values(groups).sort((a, b) => b.length - a.length)[0];
+    if (biggest && biggest.filter(isEligible).length >= 3) listRegions.push(parent);
+  });
+  // Keep only the outermost repeating container per nest (a card's inner
+  // repeating row shouldn't also be listed).
+  const topLists = listRegions.filter(p => !listRegions.some(o => o !== p && o.contains(p)));
+
+  // Merge: layout sections + list regions, de-duplicated (a list already
+  // covered by an identical layout region is not added twice).
+  const tagRegion = (el, type) => ({ el, type });
+  const merged = [
+    ...layoutRegions.map(el => tagRegion(el, 'section')),
+    ...topLists.filter(l => !layoutRegions.includes(l)).map(el => tagRegion(el, 'list')),
+  ];
+  // Drop a section if a list region is its equal-or-outer duplicate area.
+  const regionsTyped = merged.filter((m, _i, arr) =>
+    !(m.type === 'section' && arr.some(o => o.type === 'list' && o.el === m.el)));
+
+  return regionsTyped.map((entry, i) => {
+    const region = entry.el;
+    const isList = entry.type === 'list';
     const ref = 'e' + (i + 1);
     const rect = region.getBoundingClientRect();
-    const count = childCounts.get(region);
+    const count = childCounts.get(region) ?? region.children.length;
     const selector = getUniqueSelector(region);
     region.classList.add('pw-ref-highlight');
+    if (isList) region.classList.add('pw-ref-list');
 
     const badge = document.createElement('div');
-    badge.className = 'pw-ref-badge';
-    badge.textContent = ref + ' \\u00d7' + count;
+    badge.className = isList ? 'pw-ref-badge pw-ref-badge-list' : 'pw-ref-badge';
+    badge.textContent = ref + (isList ? ' \\ud83d\\udd76 \\u00d7' : ' \\u00d7') + count;
     badge.style.left = Math.max(0, rect.left + window.scrollX) + 'px';
     badge.style.top = Math.max(0, rect.top + window.scrollY - 14) + 'px';
     document.body.appendChild(badge);
@@ -685,19 +725,28 @@ const CRAWL_SCAN_JS = `() => {
     });
 
     const text = (region.innerText || region.textContent || '').trim().replace(/\\s+/g, ' ');
+    const links = region.querySelectorAll('a[href]').length;
+    const images = region.querySelectorAll('img').length;
+    const hasPrice = /[\\d,]+\\s*\\uc6d0|\\$\\s?[\\d,.]+|\\u20a9\\s?[\\d,]+/.test(text);
+    const hasDate = /\\d{4}[.\\-\\/]\\s?\\d{1,2}[.\\-\\/]\\s?\\d{1,2}|\\d{1,2}:\\d{2}/.test(text);
+    // Heuristic crawl-value score: repeating lists with rich fields rank highest.
+    const score =
+      (isList ? 5 : 0) +
+      Math.min(count, 6) +
+      (links >= count ? 2 : 0) +
+      (images >= 2 ? 1 : 0) +
+      (hasPrice ? 2 : 0) +
+      (hasDate ? 1 : 0);
     return {
       ref,
+      type: isList ? 'list' : 'section',
       container: selector,
       count,
-      fields: {
-        links: region.querySelectorAll('a[href]').length,
-        images: region.querySelectorAll('img').length,
-        hasPrice: /[\\d,]+\\s*\\uc6d0|\\$\\s?[\\d,.]+|\\u20a9\\s?[\\d,]+/.test(text),
-        hasDate: /\\d{4}[.\\-\\/]\\s?\\d{1,2}[.\\-\\/]\\s?\\d{1,2}|\\d{1,2}:\\d{2}/.test(text),
-      },
+      crawlScore: score,
+      fields: { links, images, hasPrice, hasDate },
       sample: text.slice(0, 80),
     };
-  });
+  }).sort((a, b) => b.crawlScore - a.crawlScore);
 }`;
 /**
  * Detect crawlable repeating structures on the current page, badge each
@@ -717,7 +766,8 @@ export const visualizeCrawlTargets = async (config) => {
         });
         console.log(JSON.stringify(targets, null, 2));
         log(`📸 스크린샷 저장: ${CRAWL_SCREENSHOT_PATH}`, 'success');
-        log('배지(e1, e2...)를 클릭하면 컨테이너 셀렉터가 복사됩니다', 'info');
+        log('🔵 파란 배지(🕷)=반복 목록(크롤링 추천), 🔴 빨간 배지=레이아웃 영역. crawlScore 높은 순 정렬됨', 'info');
+        log('배지 클릭 시 컨테이너 셀렉터 복사', 'info');
         log('✅ 크롤링 대상 분석 완료', 'success');
     }
     catch (error) {

@@ -1,7 +1,0 @@
-- generic [ref=e2]:
-  - heading "Miro" [level=1] [ref=e3]
-  - generic "Miro is loading" [active] [ref=e9]:
-    - generic [ref=e11]:
-      - img [ref=e13]
-      - img [ref=e16]
-      - img [ref=e19]
