@@ -463,13 +463,38 @@ const OVERLAY_JS = `() => {
     const sels = 'div,a[href],button,input,select,textarea,[role=button],[role=link],[role=tab],[role=menuitem]';
     let idx = 1;
 
+    const INTERACTIVE = new Set(['a', 'button', 'input', 'select', 'textarea']);
+    const hasDirectText = (node) =>
+      Array.from(node.childNodes).some(
+        c => c.nodeType === 3 && c.textContent.trim().length > 0,
+      );
+    // A div/span is worth badging only if it is a real visible box, not a
+    // transparent layout wrapper (which would place a badge in empty margin).
+    const isVisibleBox = (node, style) =>
+      hasDirectText(node) ||
+      node.querySelector('img,svg,video,canvas,picture') !== null ||
+      (style.backgroundImage && style.backgroundImage !== 'none') ||
+      (style.borderTopWidth !== '0px' && style.borderStyle !== 'none') ||
+      (style.boxShadow && style.boxShadow !== 'none');
+
     document.querySelectorAll(sels).forEach(el => {
       const rect = el.getBoundingClientRect();
       if (rect.width < 8 || rect.height < 8) return;
+      // Skip elements pushed off-screen (e.g. sr-only / skip links at 0,0 or -9999).
+      if (rect.right <= 0 || rect.bottom <= 0 || rect.left < -1000) return;
       const cs = window.getComputedStyle(el);
       if (cs.display === 'none' || cs.visibility === 'hidden' || cs.opacity === '0') return;
+      // Clipped/collapsed accessibility elements.
+      if (cs.clipPath && cs.clipPath.includes('inset(50%)')) return;
+      if (cs.clip === 'rect(0px, 0px, 0px, 0px)') return;
 
       const tag = el.tagName.toLowerCase();
+
+      // Interactive elements always get a badge; structural div/span wrappers
+      // only when they are an actual visible box (avoids floating badges).
+      const interactive =
+        INTERACTIVE.has(tag) || el.hasAttribute('role');
+      if (!interactive && !isVisibleBox(el, cs)) return;
 
       let extra = '';
       if (tag === 'a') {
