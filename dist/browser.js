@@ -727,23 +727,35 @@ const CRAWL_SCAN_JS = `() => {
     const text = (region.innerText || region.textContent || '').trim().replace(/\\s+/g, ' ');
     const links = region.querySelectorAll('a[href]').length;
     const images = region.querySelectorAll('img').length;
+    const paras = region.querySelectorAll('p,h1,h2,h3,h4,time,span').length;
     const hasPrice = /[\\d,]+\\s*\\uc6d0|\\$\\s?[\\d,.]+|\\u20a9\\s?[\\d,]+/.test(text);
     const hasDate = /\\d{4}[.\\-\\/]\\s?\\d{1,2}[.\\-\\/]\\s?\\d{1,2}|\\d{1,2}:\\d{2}/.test(text);
-    // Heuristic crawl-value score: repeating lists with rich fields rank highest.
+    // Chars of text per repeated item: nav/menu items are short (~<12),
+    // real content items (articles, cards) are long.
+    const avgItemChars = Math.round(text.length / Math.max(1, count));
+    // Nav/menu heuristic: every item is basically a short bare link, no media,
+    // no date/price. These repeat a lot but hold no crawlable data.
+    const looksLikeNav =
+      isList && avgItemChars < 12 && images === 0 && !hasPrice && !hasDate;
+    // Heuristic crawl-value score: repeating content lists with rich fields
+    // rank highest; navigation menus are pushed to the bottom.
     const score =
       (isList ? 5 : 0) +
       Math.min(count, 6) +
-      (links >= count ? 2 : 0) +
-      (images >= 2 ? 1 : 0) +
-      (hasPrice ? 2 : 0) +
-      (hasDate ? 1 : 0);
+      (images >= 2 ? 2 : 0) +
+      (hasPrice ? 3 : 0) +
+      (hasDate ? 2 : 0) +
+      (avgItemChars >= 30 ? 2 : 0) +
+      (paras >= count * 2 ? 1 : 0) +
+      (looksLikeNav ? -10 : 0);
     return {
       ref,
       type: isList ? 'list' : 'section',
       container: selector,
       count,
       crawlScore: score,
-      fields: { links, images, hasPrice, hasDate },
+      looksLikeNav,
+      fields: { links, images, hasPrice, hasDate, avgItemChars },
       sample: text.slice(0, 80),
     };
   }).sort((a, b) => b.crawlScore - a.crawlScore);
