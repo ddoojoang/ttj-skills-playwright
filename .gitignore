@@ -27,3 +27,10 @@ Thumbs.db
 # Logs
 *.log
 npm-debug.log*
+
+# Internal docs / agent files (never publish)
+CLAUDE.md
+.claude/CLAUDE.md
+docs/
+AI-AGENT-ASK/
+.playwright-cli/
