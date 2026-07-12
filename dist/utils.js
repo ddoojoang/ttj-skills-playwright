@@ -4,6 +4,7 @@
 import os from 'os';
 import path from 'path';
 import net from 'net';
+import http from 'http';
 import https from 'https';
 import { exec } from 'child_process';
 import { promisify } from 'util';
@@ -114,5 +115,36 @@ export const checkPortAvailable = (port) => new Promise((resolve) => {
 export const findAvailablePort = async (startPort = 9227) => {
     const available = await checkPortAvailable(startPort);
     return available ? startPort : findAvailablePort(startPort + 1);
+};
+/**
+ * Probe a local port for a live CDP endpoint (`/json/version` responds).
+ * Resolves true only when a Chrome DevTools Protocol server answers there.
+ */
+export const isCdpResponding = (port) => new Promise((resolve) => {
+    const req = http.get({ host: '127.0.0.1', port, path: '/json/version', timeout: 500 }, (res) => {
+        const ok = res.statusCode === 200;
+        res.resume();
+        resolve(ok);
+    });
+    req.on('error', () => resolve(false));
+    req.on('timeout', () => {
+        req.destroy();
+        resolve(false);
+    });
+});
+/**
+ * Find a running CDP browser by probing ports startPort..startPort+span.
+ * Returns the first responding port, or undefined if none respond. This lets
+ * subcommands reuse an already-open browser even when process detection fails,
+ * WITHOUT launching a new instance or start tab.
+ */
+export const findRunningCdpPort = async (startPort = 9227, span = 10) => {
+    const ports = Array.from({ length: span + 1 }, (_, i) => startPort + i);
+    return ports.reduce(async (acc, port) => {
+        const found = await acc;
+        if (found !== undefined)
+            return found;
+        return (await isCdpResponding(port)) ? port : undefined;
+    }, Promise.resolve(undefined));
 };
 //# sourceMappingURL=utils.js.map

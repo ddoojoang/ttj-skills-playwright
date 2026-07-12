@@ -41,4 +41,16 @@ export declare const checkPortAvailable: (port: number) => Promise<boolean>;
  * Find the first available port starting at `startPort` (default 9227).
  */
 export declare const findAvailablePort: (startPort?: number) => Promise<number>;
+/**
+ * Probe a local port for a live CDP endpoint (`/json/version` responds).
+ * Resolves true only when a Chrome DevTools Protocol server answers there.
+ */
+export declare const isCdpResponding: (port: number) => Promise<boolean>;
+/**
+ * Find a running CDP browser by probing ports startPort..startPort+span.
+ * Returns the first responding port, or undefined if none respond. This lets
+ * subcommands reuse an already-open browser even when process detection fails,
+ * WITHOUT launching a new instance or start tab.
+ */
+export declare const findRunningCdpPort: (startPort?: number, span?: number) => Promise<number | undefined>;
 //# sourceMappingURL=utils.d.ts.map

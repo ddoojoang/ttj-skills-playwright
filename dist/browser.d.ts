@@ -37,10 +37,4 @@ export declare const verifyBrowserReady: (config: BrowserConfig) => Promise<bool
  * screenshot. Best-effort — any failure is logged, never thrown.
  */
 export declare const visualizePageReferences: (config: BrowserConfig) => Promise<void>;
-/**
- * Detect crawlable repeating structures on the current page, badge each
- * top-level container (e1 ×N), print the analysis as JSON to stdout, and
- * save a full-page screenshot. Best-effort — failures are logged only.
- */
-export declare const visualizeCrawlTargets: (config: BrowserConfig) => Promise<void>;
 //# sourceMappingURL=browser.d.ts.map

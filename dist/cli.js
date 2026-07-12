@@ -7,9 +7,9 @@ import { fileURLToPath } from 'url';
 import { tmpdir } from 'node:os';
 import path from 'path';
 import { log } from './logger.js';
-import { getProfilePath, findAvailablePort, checkPortAvailable, } from './utils.js';
+import { getProfilePath, findAvailablePort, checkPortAvailable, findRunningCdpPort, } from './utils.js';
 import { detectChrome, ensureProfile } from './detector.js';
-import { launchBrowser, autoUpdateIfNeeded, verifyBrowserReady, visualizePageReferences, visualizeCrawlTargets, detectExistingBrowser, bringWindowToFront, } from './browser.js';
+import { launchBrowser, autoUpdateIfNeeded, verifyBrowserReady, visualizePageReferences, detectExistingBrowser, bringWindowToFront, } from './browser.js';
 import { evalInActivePage, gotoInActivePage, screenshotActivePage, clickInActivePage, typeInActivePage, waitInActivePage, listTabs, activateTab, clearOverlays, } from './cdp.js';
 /**
  * Read the package version dynamically from package.json (ESM-safe).
@@ -30,8 +30,7 @@ Commands:
   wait <selector> [ms]     Wait for a selector to appear (default 10000ms)
   tabs                     List open tabs with indexes
   tab <n>                  Bring tab n to the front
-  crawl                    Detect crawlable repeating structures (badges + JSON)
-  clear                    Remove visualize/crawl overlays from the page
+  clear                    Remove visualization overlays from the page
   screenshot [path] [--full]  Capture the active tab (default: <tmpdir>/ttj-screenshot.png)
 
 Options:
@@ -141,16 +140,32 @@ const waitForCdpReady = async (port) => {
         return !(await checkPortAvailable(port));
     }, Promise.resolve(false));
 };
+/** True when the caller passed --no-launch / --reuse-only (never launch). */
+const isReuseOnly = () => process.argv.slice(2).some((a) => a === '--no-launch' || a === '--reuse-only');
 /**
- * Resolve the CDP port of the running browser. If the user closed it,
- * relaunch automatically and continue — commands must never dead-end.
+ * Resolve the CDP port of the running browser, preserving existing tabs.
+ *
+ * Order: (1) process detection, (2) direct CDP port probe — reuse an already
+ * open browser even when process detection fails, WITHOUT launching or adding
+ * a tab. Only when nothing is listening do we launch a new browser (unless
+ * --no-launch was passed).
  */
 const resolveRunningPort = async () => {
     const profilePath = getProfilePath();
     const existing = await detectExistingBrowser(profilePath);
     if (existing.found && existing.port !== undefined)
         return existing.port;
-    log('Browser is closed; relaunching automatically...', 'info');
+    // Fallback: a browser may be running even if process detection missed it.
+    // Probe CDP ports and reuse it — no launch, no new tab.
+    const probed = await findRunningCdpPort(9227);
+    if (probed !== undefined)
+        return probed;
+    if (isReuseOnly()) {
+        log('No running browser found and --no-launch was set. Open the browser first with `ttj-skills-playwright`.', 'error');
+        process.exitCode = 1;
+        return undefined;
+    }
+    log('No running browser found; launching a new one...', 'info');
     const chromeReady = await ensureChrome();
     if (!chromeReady) {
         process.exitCode = 1;
@@ -273,16 +288,7 @@ const runTab = async (indexArg) => {
     log(`✅ Switched tab: [${index}] ${url}`, 'success');
 };
 /**
- * `crawl` — detect crawlable repeating structures on the active tab.
- */
-const runCrawl = async () => {
-    const port = await resolveRunningPort();
-    if (port === undefined)
-        return;
-    await visualizeCrawlTargets({ port, profilePath: getProfilePath() });
-};
-/**
- * `clear` — remove visualize/crawl overlays from the active tab.
+ * `clear` — remove visualization overlays from the active tab.
  */
 const runClear = async () => {
     const port = await resolveRunningPort();
@@ -316,7 +322,6 @@ const SUBCOMMANDS = {
     wait: () => runWait(commandArgs[0], commandArgs[1]),
     tabs: () => runTabs(),
     tab: () => runTab(commandArgs[0]),
-    crawl: () => runCrawl(),
     clear: () => runClear(),
     screenshot: () => runScreenshot(commandArgs),
 };
