@@ -1,11 +1,11 @@
 /**
- * ttj-skills-browser - Detection logic (playwright-cli, Chrome, profile)
+ * ttj-skills-browser - Detection logic (Chrome, profile)
  */
 
 import path from 'path';
 import { mkdir } from 'fs/promises';
 import { getOsType, execCommand, firstExistingPath } from './utils.js';
-import type { DetectionResult, OS } from './types.js';
+import type { DetectionResult } from './types.js';
 
 /**
  * Attempt to resolve a command, swallowing failures into an empty string.
@@ -17,23 +17,6 @@ const tryResolve = async (cmd: string): Promise<string> => {
   } catch {
     return '';
   }
-};
-
-/**
- * Build the OS-specific "locate a binary" command.
- */
-const locateCommand = (osType: OS, binary: string): string =>
-  osType === 'windows' ? `where ${binary}` : `which ${binary}`;
-
-/**
- * Detect the globally installed playwright-cli binary.
- */
-export const detectPlaywrightCli = async (): Promise<DetectionResult> => {
-  const osType = getOsType();
-  const detected = await tryResolve(locateCommand(osType, 'playwright-cli'));
-  return detected
-    ? { found: true, path: detected }
-    : { found: false };
 };
 
 /**

@@ -15,7 +15,8 @@ const colorMap = {
     error: chalk.red,
 };
 const formatMessage = (message, type) => `${iconMap[type]}  ${colorMap[type](message)}`;
+// Diagnostics go to stderr so stdout stays parseable data (e.g. crawl JSON).
 export const log = (message, type = 'info') => {
-    console.log(formatMessage(message, type));
+    console.error(formatMessage(message, type));
 };
 //# sourceMappingURL=logger.js.map

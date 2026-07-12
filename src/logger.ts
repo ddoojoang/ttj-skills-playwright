@@ -22,6 +22,7 @@ const colorMap: Record<LogType, (text: string) => string> = {
 const formatMessage = (message: string, type: LogType): string =>
   `${iconMap[type]}  ${colorMap[type](message)}`;
 
+// Diagnostics go to stderr so stdout stays parseable data (e.g. crawl JSON).
 export const log = (message: string, type: LogType = 'info'): void => {
-  console.log(formatMessage(message, type));
+  console.error(formatMessage(message, type));
 };

@@ -6,18 +6,15 @@ import os from 'os';
 import path from 'path';
 import net from 'net';
 import https from 'https';
-import { exec, execFile } from 'child_process';
+import { exec } from 'child_process';
 import { promisify } from 'util';
 import { readFile, access } from 'fs/promises';
 import { fileURLToPath } from 'url';
 import type { OS } from './types.js';
 
 const execAsync = promisify(exec);
-const execFileAsync = promisify(execFile);
 
-const EXEC_FILE_MAX_BUFFER = 1024 * 1024 * 16;
-
-const PACKAGE_NAME = 'ttj-browser';
+const PACKAGE_NAME = 'ttj-skills-browser';
 const NPM_REGISTRY = 'https://registry.npmjs.org';
 
 /**
@@ -71,21 +68,6 @@ export const firstExistingPath = async (
  */
 export const execCommand = async (cmd: string): Promise<string> => {
   const { stdout } = await execAsync(cmd);
-  return stdout.trim();
-};
-
-/**
- * Execute a binary with an explicit argv list (no shell involved).
- * Safe for passing large / special-character payloads (e.g. injected JS)
- * as a single argument without any shell-escaping.
- */
-export const execFileCommand = async (
-  cmd: string,
-  args: string[],
-): Promise<string> => {
-  const { stdout } = await execFileAsync(cmd, args, {
-    maxBuffer: EXEC_FILE_MAX_BUFFER,
-  });
   return stdout.trim();
 };
 

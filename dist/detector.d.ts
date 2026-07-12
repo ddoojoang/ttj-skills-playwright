@@ -1,11 +1,7 @@
 /**
- * ttj-skills-browser - Detection logic (playwright-cli, Chrome, profile)
+ * ttj-skills-browser - Detection logic (Chrome, profile)
  */
 import type { DetectionResult } from './types.js';
-/**
- * Detect the globally installed playwright-cli binary.
- */
-export declare const detectPlaywrightCli: () => Promise<DetectionResult>;
 /**
  * Detect an installed Chrome / Chromium binary for the current platform.
  */

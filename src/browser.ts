@@ -3,31 +3,28 @@
  */
 
 import { spawn } from 'child_process';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import {
   execCommand,
-  execFileCommand,
   getVersionFromPackageJson,
   getLatestVersionFromNpm,
   checkPortAvailable,
   getOsType,
+  getProfilePath,
 } from './utils.js';
-import { detectPlaywrightCli, detectChrome } from './detector.js';
+import { detectChrome } from './detector.js';
 import { log } from './logger.js';
+import { withActivePage } from './cdp.js';
 import type { BrowserConfig, VersionInfo, ExistingBrowser } from './types.js';
 
 const START_URL = 'https://www.google.com';
 
-const VISUAL_SCREENSHOT_PATH = '/tmp/ttj-refs-visual.png';
+const VISUAL_SCREENSHOT_PATH = path.join(tmpdir(), 'ttj-refs-visual.png');
 
 const RETRY_INTERVAL_MS = 100;
 const RETRY_MAX_ATTEMPTS = 10;
-
-/**
- * Install playwright-cli globally via npm.
- */
-export const installPlaywrightCli = async (): Promise<void> => {
-  await execCommand('npm install -g @playwright/cli');
-};
 
 /**
  * Parse the `--remote-debugging-port=NNNN` value from a process command line.
@@ -213,8 +210,34 @@ export const checkForUpdates = async (): Promise<VersionInfo> => {
  * Auto-update to the latest version when one is available.
  * Best-effort: any failure is swallowed so the user keeps the current version.
  */
+const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Side effect: read the epoch-ms timestamp of the last update check
+ * (0 when the stamp file is missing or unreadable).
+ */
+const readLastUpdateCheck = async (stampPath: string): Promise<number> => {
+  try {
+    const raw = await readFile(stampPath, 'utf-8');
+    const parsed = Number(raw.trim());
+    return Number.isFinite(parsed) ? parsed : 0;
+  } catch {
+    return 0;
+  }
+};
+
 export const autoUpdateIfNeeded = async (): Promise<void> => {
   try {
+    // Throttle: hit the npm registry at most once a day so every other
+    // launch starts instantly.
+    const profilePath = getProfilePath();
+    const stampPath = path.join(profilePath, '.last-update-check');
+    const lastChecked = await readLastUpdateCheck(stampPath);
+    if (Date.now() - lastChecked < UPDATE_CHECK_INTERVAL_MS) return;
+
+    await mkdir(profilePath, { recursive: true });
+    await writeFile(stampPath, String(Date.now()), 'utf-8');
+
     const versionInfo = await checkForUpdates();
     if (versionInfo.hasUpdate) {
       log(
@@ -255,8 +278,7 @@ const retryCheck = async (
 };
 
 /**
- * Verify that the browser is ready by polling three signals in parallel:
- *  - playwright-cli is resolvable
+ * Verify that the browser is ready by polling two signals in parallel:
  *  - Chrome / Chromium is resolvable
  *  - the debugging port is occupied (browser is listening on it)
  * Each check retries at 100ms intervals for up to 10 attempts.
@@ -264,25 +286,23 @@ const retryCheck = async (
 export const verifyBrowserReady = async (
   config: BrowserConfig,
 ): Promise<boolean> => {
-  const [playwrightReady, chromeReady, portOccupied] = await Promise.all([
-    retryCheck(async () => (await detectPlaywrightCli()).found === true),
+  const [chromeReady, portOccupied] = await Promise.all([
     retryCheck(async () => (await detectChrome()).found === true),
     retryCheck(async () => (await checkPortAvailable(config.port)) === false),
   ]);
-  return playwrightReady && chromeReady && portOccupied;
+  return chromeReady && portOccupied;
 };
 
 /**
  * Injected page-side script (ported from the `bb 2` reference visualizer).
- * Runs inside `page.evaluate` via `playwright-cli run-code`, so it is authored
+ * Runs inside `page.evaluate` over a direct CDP connection, so it is authored
  * in browser JavaScript (not project FP TypeScript). It:
  *  1. auto-scrolls to trigger lazy-loaded content,
  *  2. overlays numbered badges (e1, e2, ...) + selector labels on every visible
  *     div / interactive element,
  *  3. wires click-to-copy of a unique CSS selector to the clipboard.
  */
-const REFERENCE_OVERLAY_CODE = `async page => {
-  await page.evaluate(async () => {
+const AUTO_SCROLL_JS = `async () => {
     const distance = window.innerHeight;
     let currentPosition = 0;
     const maxScroll = document.body.scrollHeight;
@@ -293,9 +313,14 @@ const REFERENCE_OVERLAY_CODE = `async page => {
     }
     window.scrollTo(0, 0);
     await new Promise(r => setTimeout(r, 300));
-  });
+  }`;
 
-  await page.evaluate(() => {
+/**
+ * Browser-context JS (injected as a string) that overlays numbered badges
+ * (e1, e2, ...) + hover selector labels + click-to-copy on every visible
+ * div / interactive element. Ported from the `bb 2` reference visualizer.
+ */
+const OVERLAY_JS = `() => {
     document.querySelectorAll('.pw-ref-overlay,.pw-ref-style,.pw-ref-svg,.pw-ref-badge').forEach(e => e.remove());
     document.querySelectorAll('.pw-ref-highlight').forEach(e => e.classList.remove('pw-ref-highlight'));
 
@@ -354,7 +379,7 @@ const REFERENCE_OVERLAY_CODE = `async page => {
     document.head.appendChild(style);
 
     const getUniqueSelector = (el) => {
-      if (el.id) return el.tagName.toLowerCase() + '#' + el.id;
+      if (el.id) return el.tagName.toLowerCase() + '#' + CSS.escape(el.id);
 
       const path = [];
       let current = el;
@@ -362,7 +387,7 @@ const REFERENCE_OVERLAY_CODE = `async page => {
         const tag = current.tagName.toLowerCase();
 
         if (current.id) {
-          path.unshift(tag + '#' + current.id);
+          path.unshift(tag + '#' + CSS.escape(current.id));
           break;
         }
 
@@ -371,7 +396,7 @@ const REFERENCE_OVERLAY_CODE = `async page => {
 
         const cls = Array.from(current.classList)
           .filter(c => !c.startsWith('pw-ref-'))
-          .slice(0, 2).map(c => '.' + c).join('');
+          .slice(0, 2).map(c => '.' + CSS.escape(c)).join('');
 
         const siblings = Array.from(parent.children).filter(c => c.tagName === current.tagName);
         const part = siblings.length > 1
@@ -394,9 +419,9 @@ const REFERENCE_OVERLAY_CODE = `async page => {
       const tag = el.tagName.toLowerCase();
       const cls = Array.from(el.classList)
         .filter(c => !c.startsWith('pw-ref-'))
-        .slice(0, 2).map(c => '.' + c).join('');
+        .slice(0, 2).map(c => '.' + CSS.escape(c)).join('');
 
-      if (el.id) return tag + '#' + el.id;
+      if (el.id) return tag + '#' + CSS.escape(el.id);
 
       const base = tag + cls;
       try {
@@ -413,10 +438,10 @@ const REFERENCE_OVERLAY_CODE = `async page => {
         } catch(e) {}
 
         const pTag = parent.tagName.toLowerCase();
-        const pId = parent.id ? '#' + parent.id : '';
+        const pId = parent.id ? '#' + CSS.escape(parent.id) : '';
         const pCls = pId ? '' : Array.from(parent.classList)
           .filter(c => !c.startsWith('pw-ref-'))
-          .slice(0, 2).map(c => '.' + c).join('');
+          .slice(0, 2).map(c => '.' + CSS.escape(c)).join('');
         const parentSel = pTag + pId + pCls;
 
         const grandParent = parent.parentElement;
@@ -525,41 +550,32 @@ const REFERENCE_OVERLAY_CODE = `async page => {
       idx++;
     });
     return idx - 1;
-  });
-}`;
+  }`;
 
 /**
- * Playwright snippet that captures a full-page screenshot of the visualized page.
- */
-const REFERENCE_SCREENSHOT_CODE = `async page => {
-  await page.screenshot({ path: '${VISUAL_SCREENSHOT_PATH}', fullPage: true });
-}`;
-
-/**
- * Visualize every element on the currently open page: inject numbered badges
- * (e1, e2, ...) + selector labels + click-to-copy, then take a full-page
+ * Visualize every element on the currently open page: connect directly over
+ * CDP to the running browser, inject numbered badges (e1, e2, ...) + hover
+ * selector labels + click-to-copy into the active tab, then take a full-page
  * screenshot. Best-effort — any failure is logged, never thrown.
- *
- * Requires an active `playwright-cli` session on the page you want to inspect.
  */
 export const visualizePageReferences = async (
-  _config: BrowserConfig,
+  config: BrowserConfig,
 ): Promise<void> => {
   try {
-    const chrome = await detectChrome();
-    if (!chrome.found || !chrome.path) {
-      log('Chrome을 찾을 수 없습니다', 'error');
-      return;
-    }
+    log('기존 브라우저(CDP)에 연결 중입니다...', 'info');
+    await withActivePage(config.port, async (page) => {
+      log(
+        '페이지 요소를 시각화 중입니다 (자동 스크롤 + 라벨 오버레이)...',
+        'info',
+      );
+      // evaluate(string) runs an expression — wrap as IIFE so the function
+      // strings are actually invoked (and their promises awaited).
+      await page.evaluate(`(${AUTO_SCROLL_JS})()`);
+      await page.evaluate(`(${OVERLAY_JS})()`);
 
-    log('페이지 요소를 시각화 중입니다 (자동 스크롤 + 라벨 오버레이)...', 'info');
-    await execFileCommand('playwright-cli', ['run-code', REFERENCE_OVERLAY_CODE]);
-
-    log('전체 페이지 스크린샷을 촬영 중입니다...', 'info');
-    await execFileCommand('playwright-cli', [
-      'run-code',
-      REFERENCE_SCREENSHOT_CODE,
-    ]);
+      log('전체 페이지 스크린샷을 촬영 중입니다...', 'info');
+      await page.screenshot({ path: VISUAL_SCREENSHOT_PATH, fullPage: true });
+    });
 
     log(`📸 스크린샷 저장: ${VISUAL_SCREENSHOT_PATH}`, 'success');
     log(
@@ -570,6 +586,225 @@ export const visualizePageReferences = async (
   } catch (error) {
     log(
       `시각화 중 오류: ${error instanceof Error ? error.message : String(error)}`,
+      'error',
+    );
+  }
+};
+
+const CRAWL_SCREENSHOT_PATH = path.join(tmpdir(), 'ttj-crawl-visual.png');
+
+/**
+ * Injected page-side script that detects crawlable repeating structures
+ * (lists of similar sibling elements) at their top-most container level,
+ * badges each container (e1 ×N), and returns an analysis array. Reuses the
+ * same .pw-ref-* classes as OVERLAY_JS so each visualization always clears
+ * the previous one. Browser JavaScript, not project FP TypeScript.
+ */
+const CRAWL_SCAN_JS = `() => {
+  document.querySelectorAll('.pw-ref-overlay,.pw-ref-style,.pw-ref-svg,.pw-ref-badge,.pw-ref-tooltip').forEach(e => e.remove());
+  document.querySelectorAll('.pw-ref-highlight').forEach(e => e.classList.remove('pw-ref-highlight', 'pw-ref-focused', 'pw-ref-dimmed'));
+
+  const style = document.createElement('style');
+  style.className = 'pw-ref-style';
+  style.textContent = \`
+    .pw-ref-badge {
+      position:absolute;background:rgba(220,38,38,0.95);color:#fff;
+      font-family:monospace;font-size:12px;font-weight:bold;
+      padding:3px 8px;border-radius:6px;z-index:999999;cursor:pointer;
+      box-shadow:0 2px 6px rgba(0,0,0,0.4);border:1px solid rgba(255,255,255,0.5);
+      transition:transform 0.1s;
+    }
+    .pw-ref-badge:hover { transform:scale(1.15);background:rgba(30,64,175,0.95); }
+    .pw-ref-badge.pw-copied { background:rgba(22,163,74,0.95); }
+    .pw-ref-badge.pw-ref-dimmed { opacity:0!important;pointer-events:none!important; }
+    .pw-ref-overlay {
+      position:absolute;background:rgba(220,38,38,0.92);color:#fff;
+      font-size:10px;font-weight:bold;padding:2px 5px;border-radius:4px;
+      z-index:999999;pointer-events:none;font-family:monospace;line-height:14px;
+      white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,0.4);
+      border:1px solid rgba(255,255,255,0.3);user-select:none;display:none;
+    }
+    .pw-ref-highlight { outline:3px solid rgba(220,38,38,0.9)!important;outline-offset:2px; }
+    .pw-ref-highlight.pw-ref-focused { outline:4px solid rgba(220,38,38,1)!important;outline-offset:2px; }
+    .pw-ref-highlight.pw-ref-dimmed { outline-color:transparent!important; }
+    .pw-ref-tooltip {
+      position:fixed;top:10px;left:50%;transform:translateX(-50%);
+      background:rgba(22,163,74,0.95);color:#fff;padding:8px 16px;
+      border-radius:8px;font-family:monospace;font-size:13px;font-weight:bold;
+      z-index:1000001;pointer-events:none;
+    }
+  \`;
+  document.head.appendChild(style);
+
+  const cleanClasses = (el) => Array.from(el.classList).filter(c => !c.startsWith('pw-ref-'));
+
+  const getUniqueSelector = (el) => {
+    if (el.id) return el.tagName.toLowerCase() + '#' + CSS.escape(el.id);
+    const path = [];
+    let current = el;
+    while (current && current !== document.body && current !== document.documentElement) {
+      const tag = current.tagName.toLowerCase();
+      if (current.id) { path.unshift(tag + '#' + CSS.escape(current.id)); break; }
+      const parent = current.parentElement;
+      if (!parent) break;
+      const cls = cleanClasses(current).slice(0, 2).map(c => '.' + CSS.escape(c)).join('');
+      const siblings = Array.from(parent.children).filter(c => c.tagName === current.tagName);
+      const part = siblings.length > 1
+        ? tag + cls + ':nth-of-type(' + (siblings.indexOf(current) + 1) + ')'
+        : tag + cls;
+      path.unshift(part);
+      try { if (document.querySelectorAll(path.join(' > ')).length === 1) return path.join(' > '); } catch (e) {}
+      current = parent;
+    }
+    return path.join(' > ');
+  };
+
+  // Same eligibility as the detailed visualization (OVERLAY_JS)
+  const sels = 'div,a[href],button,input,select,textarea,[role=button],[role=link],[role=tab],[role=menuitem]';
+  const isEligible = (el) => {
+    const rect = el.getBoundingClientRect();
+    if (rect.width < 8 || rect.height < 8) return false;
+    const cs = window.getComputedStyle(el);
+    return cs.display !== 'none' && cs.visibility !== 'hidden' && cs.opacity !== '0';
+  };
+
+  // Collect the PARENT of every element the detailed visualization would badge
+  const parents = [];
+  const childCounts = new Map();
+  document.querySelectorAll(sels).forEach(el => {
+    if (!isEligible(el)) return;
+    const parent = el.parentElement;
+    if (!parent || parent === document.body || parent === document.documentElement) return;
+    if (!childCounts.has(parent)) { parents.push(parent); childCounts.set(parent, 0); }
+    childCounts.set(parent, childCounts.get(parent) + 1);
+  });
+
+  // A "region" = parent with 2+ eligible children, itself visible
+  const candidates = parents.filter(p => childCounts.get(p) >= 2 && isEligible(p));
+
+  // Drop page-wide wrappers (>60% of the document) — they are layout shells,
+  // not crawlable sections.
+  const docArea = Math.max(1, document.body.scrollWidth * document.body.scrollHeight);
+  const sized = candidates.filter(p => {
+    const r = p.getBoundingClientRect();
+    return (r.width * r.height) / docArea <= 0.6;
+  });
+
+  // Top-most regions (layout columns), then peel ONE layer inside each to get
+  // section-level areas. The final set is mutually non-nested, so boxes never
+  // overlap and badges never stack at shared parent/child corners.
+  const outermostWithin = (container) =>
+    sized.filter(p => p !== container && container.contains(p) &&
+      !sized.some(o => o !== p && o !== container && container.contains(o) && o.contains(p)));
+
+  const sectionsOf = (container, depth) => {
+    const subs = outermostWithin(container);
+    if (subs.length === 0 || depth <= 0) return [container];
+    if (subs.length === 1) return sectionsOf(subs[0], depth - 1);
+    return subs;
+  };
+
+  const level1 = sized.filter(p => !sized.some(other => other !== p && other.contains(p)));
+  const regions = level1.flatMap(l1 => sectionsOf(l1, 4));
+
+  return regions.map((region, i) => {
+    const ref = 'e' + (i + 1);
+    const rect = region.getBoundingClientRect();
+    const count = childCounts.get(region);
+    const selector = getUniqueSelector(region);
+    region.classList.add('pw-ref-highlight');
+
+    const badge = document.createElement('div');
+    badge.className = 'pw-ref-badge';
+    badge.textContent = ref + ' \\u00d7' + count;
+    badge.style.left = Math.max(0, rect.left + window.scrollX) + 'px';
+    badge.style.top = Math.max(0, rect.top + window.scrollY - 14) + 'px';
+    document.body.appendChild(badge);
+
+    const label = document.createElement('div');
+    label.className = 'pw-ref-overlay';
+    label.textContent = ref + ' ' + selector + ' (\\uc790\\uc2dd ' + count + '\\uac1c)';
+    label.style.left = Math.max(0, rect.left + window.scrollX) + 'px';
+    label.style.top = Math.max(0, rect.top + window.scrollY - 34) + 'px';
+    document.body.appendChild(label);
+
+    // Hover isolation: show only this box, dim every other box/badge
+    badge.addEventListener('mouseenter', () => {
+      document.querySelectorAll('.pw-ref-highlight').forEach(e => e.classList.add('pw-ref-dimmed'));
+      region.classList.remove('pw-ref-dimmed');
+      region.classList.add('pw-ref-focused');
+      document.querySelectorAll('.pw-ref-badge').forEach(b => b.classList.add('pw-ref-dimmed'));
+      badge.classList.remove('pw-ref-dimmed');
+      label.style.display = 'block';
+    });
+    badge.addEventListener('mouseleave', () => {
+      document.querySelectorAll('.pw-ref-dimmed').forEach(e => e.classList.remove('pw-ref-dimmed'));
+      region.classList.remove('pw-ref-focused');
+      label.style.display = 'none';
+    });
+
+    badge.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      ev.preventDefault();
+      navigator.clipboard.writeText(selector).then(() => {
+        badge.classList.add('pw-copied');
+        const old = document.querySelector('.pw-ref-tooltip');
+        if (old) old.remove();
+        const toast = document.createElement('div');
+        toast.className = 'pw-ref-tooltip';
+        toast.textContent = 'Copied: ' + selector;
+        document.body.appendChild(toast);
+        setTimeout(() => { badge.classList.remove('pw-copied'); }, 800);
+        setTimeout(() => { toast.remove(); }, 1500);
+      });
+    });
+
+    const text = (region.innerText || region.textContent || '').trim().replace(/\\s+/g, ' ');
+    return {
+      ref,
+      container: selector,
+      count,
+      fields: {
+        links: region.querySelectorAll('a[href]').length,
+        images: region.querySelectorAll('img').length,
+        hasPrice: /[\\d,]+\\s*\\uc6d0|\\$\\s?[\\d,.]+|\\u20a9\\s?[\\d,]+/.test(text),
+        hasDate: /\\d{4}[.\\-\\/]\\s?\\d{1,2}[.\\-\\/]\\s?\\d{1,2}|\\d{1,2}:\\d{2}/.test(text),
+      },
+      sample: text.slice(0, 80),
+    };
+  });
+}`;
+
+/**
+ * Detect crawlable repeating structures on the current page, badge each
+ * top-level container (e1 ×N), print the analysis as JSON to stdout, and
+ * save a full-page screenshot. Best-effort — failures are logged only.
+ */
+export const visualizeCrawlTargets = async (
+  config: BrowserConfig,
+): Promise<void> => {
+  try {
+    log('기존 브라우저(CDP)에 연결 중입니다...', 'info');
+    const targets = await withActivePage(config.port, async (page) => {
+      log(
+        '크롤링 대상을 분석 중입니다 (자동 스크롤 + 반복 구조 탐지)...',
+        'info',
+      );
+      await page.evaluate(`(${AUTO_SCROLL_JS})()`);
+      const result = await page.evaluate(`(${CRAWL_SCAN_JS})()`);
+
+      log('전체 페이지 스크린샷을 촬영 중입니다...', 'info');
+      await page.screenshot({ path: CRAWL_SCREENSHOT_PATH, fullPage: true });
+      return result;
+    });
+
+    console.log(JSON.stringify(targets, null, 2));
+    log(`📸 스크린샷 저장: ${CRAWL_SCREENSHOT_PATH}`, 'success');
+    log('배지(e1, e2...)를 클릭하면 컨테이너 셀렉터가 복사됩니다', 'info');
+    log('✅ 크롤링 대상 분석 완료', 'success');
+  } catch (error) {
+    log(
+      `크롤링 대상 분석 중 오류: ${error instanceof Error ? error.message : String(error)}`,
       'error',
     );
   }

@@ -1,5 +1,5 @@
 /**
- * ttj-skills-browser - Detection logic (playwright-cli, Chrome, profile)
+ * ttj-skills-browser - Detection logic (Chrome, profile)
  */
 import path from 'path';
 import { mkdir } from 'fs/promises';
@@ -15,20 +15,6 @@ const tryResolve = async (cmd) => {
     catch {
         return '';
     }
-};
-/**
- * Build the OS-specific "locate a binary" command.
- */
-const locateCommand = (osType, binary) => osType === 'windows' ? `where ${binary}` : `which ${binary}`;
-/**
- * Detect the globally installed playwright-cli binary.
- */
-export const detectPlaywrightCli = async () => {
-    const osType = getOsType();
-    const detected = await tryResolve(locateCommand(osType, 'playwright-cli'));
-    return detected
-        ? { found: true, path: detected }
-        : { found: false };
 };
 /**
  * macOS Chrome detection: spotlight first, then the default app path.
