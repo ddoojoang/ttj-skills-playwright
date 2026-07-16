@@ -36,8 +36,16 @@ export declare const verifyBrowserReady: (config: BrowserConfig) => Promise<bool
 /**
  * Visualize every element on the currently open page: connect directly over
  * CDP to the running browser, inject numbered badges (e1, e2, ...) + hover
- * selector labels + click-to-copy into the active tab, then take a full-page
+ * selector labels + click-to-copy into the active tab, then take a
  * screenshot. Best-effort — any failure is logged, never thrown.
+ *
+ * FAST by default: boxes render immediately — no auto-scroll and NO
+ * screenshot (speed is the point; the user reads the boxes on screen, clicks
+ * a badge to copy its selector, and asks to crawl just that part). Pass
+ * `options.full` to auto-scroll first (triggers lazy-loaded content) and
+ * capture a full-page screenshot — the old, slower behavior.
  */
-export declare const visualizePageReferences: (config: BrowserConfig) => Promise<void>;
+export declare const visualizePageReferences: (config: BrowserConfig, options?: {
+    readonly full?: boolean;
+}) => Promise<void>;
 //# sourceMappingURL=browser.d.ts.map

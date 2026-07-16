@@ -59,13 +59,14 @@ Commands:
   tabs                     List open tabs with indexes
   tab <n>                  Bring tab n to the front
   clear                    Remove visualization overlays from the page
-  analyze                  Overlay red boxes + print page structure JSON (crawl targets)
+  analyze [--full]         Overlay red boxes + print page structure JSON (crawl targets)
   screenshot [path] [--full]  Capture the active tab (default: <tmpdir>/ttj-screenshot.png)
 
 Options:
   --version, -v    Show version
   --help, -h       Show this help message
-  --visualize      Launch browser and visualize page references
+  --visualize      Launch browser and visualize page references (instant boxes)
+  --full           With --visualize/analyze: auto-scroll first (lazy-load) + full-page shot
   (no options)     Launch browser
 
 Examples:
@@ -74,8 +75,9 @@ Examples:
   $ ttj-skills-playwright goto https://www.naver.com
   $ ttj-skills-playwright eval "document.querySelector('#btn').style.background='yellow'"
   $ ttj-skills-playwright screenshot /tmp/shot.png --full
-  $ ttj-skills-playwright --visualize  # Overlay element badges + screenshot
+  $ ttj-skills-playwright --visualize  # Instant element boxes + screenshot
   $ ttj-skills-playwright analyze      # Red boxes + JSON of crawlable structure
+  $ ttj-skills-playwright analyze --full  # Slower: auto-scroll whole page first
 `;
 
 /**
@@ -100,6 +102,14 @@ const handleInfoFlags = (args: readonly string[]): boolean => {
 const isVisualizeRequested = (): boolean =>
   process.env.VISUALIZE === 'true' ||
   process.argv.slice(2).some((arg) => arg === '--visualize' || arg === 'visualize');
+
+/**
+ * Whether the user requested the FULL (slow) scan: auto-scroll the whole page
+ * first (triggers lazy-loading) + full-page screenshot. Without it, visualize/
+ * analyze draw boxes instantly on what is currently rendered.
+ */
+const isFullScanRequested = (): boolean =>
+  process.argv.slice(2).includes('--full');
 
 const ensureChrome = async (): Promise<boolean> => {
   const detection = await detectChrome();
@@ -150,7 +160,10 @@ const reuseExistingBrowser = async (
   );
 
   if (isVisualizeRequested()) {
-    await visualizePageReferences({ port, profilePath });
+    await visualizePageReferences(
+      { port, profilePath },
+      { full: isFullScanRequested() },
+    );
   }
 };
 
@@ -205,7 +218,10 @@ const main = async (): Promise<void> => {
   if (isVisualizeRequested()) {
     const ready = await waitForCdpReady(port);
     if (ready) {
-      await visualizePageReferences({ port, profilePath });
+      await visualizePageReferences(
+        { port, profilePath },
+        { full: isFullScanRequested() },
+      );
     } else {
       log('CDP port did not open; skipping visualization', 'warning');
     }
@@ -414,17 +430,21 @@ const runClear = async (): Promise<void> => {
 };
 
 /**
- * `analyze` — visualize the page (red boxes + full-page screenshot) AND print
- * a machine-readable JSON of the page structure to stdout so an AI can propose
- * crawlable targets. Human-readable notes go through log() (stderr-style), so
- * the last large stdout payload is the JSON itself.
+ * `analyze [--full]` — visualize the page (instant red boxes; with --full also
+ * auto-scroll + full-page screenshot) AND print a machine-readable JSON of the
+ * page structure to stdout so an AI can propose crawlable targets.
+ * Human-readable notes go through log() (stderr-style), so the last large
+ * stdout payload is the JSON itself.
  */
 const runAnalyze = async (): Promise<void> => {
   const port = await resolveRunningPort();
   if (port === undefined) return;
 
-  // 1) Existing visualization: red boxes + badges + full-page screenshot.
-  await visualizePageReferences({ port, profilePath: getProfilePath() });
+  // 1) Visualization: instant red boxes + badges (screenshot only on --full).
+  await visualizePageReferences(
+    { port, profilePath: getProfilePath() },
+    { full: isFullScanRequested() },
+  );
 
   // 2) Structure analysis → JSON (the final, machine-readable stdout output).
   log('Analyzing page structure for crawlable targets...', 'info');

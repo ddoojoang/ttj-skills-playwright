@@ -139,22 +139,16 @@ ttj-skills-playwright clear                           # remove visualization bad
 
 **Trigger**: "show me the elements", "visualize the page", "show the HTML structure", "analyze the elements", "요소 보여줘", "요소 분석해줘", "HTML 구조 보여줘", "페이지 시각화해줘", "要素を見せて".
 
-`--visualize` overlays a red numbered badge (`e1, e2, …`) **pinned exactly to each element's top-left corner** + a red outline on every visible content element (divs, links, buttons, inputs, cards). Empty layout wrappers and off-screen/clipped carousel items are excluded, so badges mark only real visible content. It auto-scrolls (to trigger lazy-load), then saves a full-page screenshot to a temp folder (**exact path is printed in the log line "📸 Screenshot saved:"** — Read that path).
+`--visualize` overlays a red numbered badge (`e1, e2, …`) **pinned exactly to each element's top-left corner** + a red outline on every visible content element (divs, links, buttons, inputs, cards). Empty layout wrappers and off-screen/clipped carousel items are excluded, so badges mark only real visible content.
+
+**INSTANT by default** — boxes appear immediately on what is currently rendered: no auto-scroll, no screenshot, selectors computed lazily on hover/click. This is the mode to use when the user says "요소 보여줘 / show elements": the user looks at the browser, clicks a badge to copy its selector, and asks you to crawl just that part. Add `--full` only when the user explicitly wants the whole page (auto-scrolls to trigger lazy-load, then saves a full-page screenshot — path printed in the "📸 Screenshot saved:" log line).
 
 Hover a badge to isolate that element — every other box dims and the hovered element fills with a translucent red box (unmistakable even for large elements) with its selector label. Click a badge to copy its unique CSS selector to the clipboard.
 
 **AI procedure:**
-1. Run `ttj-skills-playwright --visualize`
-2. Read the screenshot path from the "📸 Screenshot saved:" log line and show it to the user
-3. Output an element classification table:
-
-| Area | Refs | Elements |
-|------|------|----------|
-| Header | e1~e8 | logo, nav, search |
-| Main | e9~e30 | cards, banners, buttons |
-| Footer | e31~e50 | links, copyright |
-
-4. The user can copy a badge's ref (`e7`) or click a badge to copy its selector, then ask you to act on it.
+1. Run `ttj-skills-playwright --visualize` (instant; add `--full` only if the user asks for the whole page / a screenshot)
+2. Tell the user the boxes are on screen: hover a badge to inspect, click it to copy the selector
+3. The user pastes a ref (`e7`) or a copied selector and asks you to act on / crawl that part — do exactly that scope, nothing more.
 
 **Overlay rule**: each `--visualize` clears the previous overlay and shows only the new one. Badges/boxes stay on the page, so run `ttj-skills-playwright clear` for a clean screen/screenshot (no reload needed).
 
@@ -162,7 +156,7 @@ Hover a badge to isolate that element — every other box dims and the hovered e
 
 **Trigger**: "요소 보여줘", "요소 분석", "html 분석해줘", "크롤링 뭐 할 수 있어", "페이지 분석" · "show elements", "analyze this page", "what can I crawl", "크롤링 대상 찾아줘".
 
-`analyze` does two things in one shot: (1) runs the same red-box **visualization** (badges `e1, e2, …` + full-page screenshot, path printed in the "📸 Screenshot saved:" log line), then (2) prints a **machine-readable JSON** of the page structure to stdout — this JSON is the last large stdout block. Shape:
+`analyze` does two things in one shot: (1) runs the same **instant** red-box visualization (badges `e1, e2, …`; no auto-scroll/screenshot — add `--full` for lazy-load scan + full-page screenshot), then (2) prints a **machine-readable JSON** of the page structure to stdout — this JSON is the last large stdout block. Shape:
 
 ```jsonc
 {
@@ -181,9 +175,9 @@ Hover a badge to isolate that element — every other box dims and the hovered e
 ```
 
 **AI procedure:**
-1. Run `ttj-skills-playwright analyze`.
+1. Run `ttj-skills-playwright analyze` (add `--full` only if the user wants below-the-fold/lazy-loaded content too).
 2. Read the JSON from stdout and **judge** which entries are worth crawling. Present them to the user (in the user's language) as a numbered list. For each item state: what it is (e.g. "뉴스 기사 목록, 20건"), the extractable fields (title / link / image / price / date), and the `itemSelector` to use.
-3. Show the screenshot path and note that the red badges (`e1, e2, …`) on the page correspond to these proposed targets so the user can cross-check visually.
+3. Note that the red badges (`e1, e2, …`) on the page correspond to these proposed targets so the user can cross-check visually (with `--full`, also show the screenshot path).
 4. When the user picks an item, use its `itemSelector` to write the follow-up `eval` / crawling code (still going through the ① DOM verification → ② write → ③ run-test gates below).
 
 Prefer `analyze` over `--visualize` when the user's intent is "what can I extract/crawl here"; use `--visualize` when they only want to see/label elements.

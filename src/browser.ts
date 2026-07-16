@@ -482,13 +482,25 @@ const OVERLAY_JS = `() => {
       (style.boxShadow && style.boxShadow !== 'none');
     const docW = document.documentElement.clientWidth;
     // True if the element is scrolled/clipped out of an overflow ancestor
-    // (e.g. off-screen items of a horizontal carousel).
+    // (e.g. off-screen items of a horizontal carousel). Ancestor overflow
+    // style + rect are memoized: deep trees share the same few containers,
+    // so this avoids recomputing getComputedStyle thousands of times.
+    const clipInfoCache = new Map();
+    const getClipInfo = (p) => {
+      const cached = clipInfoCache.get(p);
+      if (cached !== undefined) return cached;
+      const ps = window.getComputedStyle(p);
+      const clips = /(hidden|scroll|auto|clip)/.test(ps.overflow + ps.overflowX + ps.overflowY);
+      const info = clips ? { clips: true, rect: p.getBoundingClientRect() } : { clips: false };
+      clipInfoCache.set(p, info);
+      return info;
+    };
     const isClipped = (el, r) => {
       let p = el.parentElement;
       while (p && p !== document.body) {
-        const ps = window.getComputedStyle(p);
-        if (/(hidden|scroll|auto|clip)/.test(ps.overflow + ps.overflowX + ps.overflowY)) {
-          const pr = p.getBoundingClientRect();
+        const info = getClipInfo(p);
+        if (info.clips) {
+          const pr = info.rect;
           if (r.right <= pr.left + 1 || r.left >= pr.right - 1 ||
               r.bottom <= pr.top + 1 || r.top >= pr.bottom - 1) return true;
         }
@@ -496,8 +508,7 @@ const OVERLAY_JS = `() => {
       }
       return false;
     };
-    const onScreenVisible = (el) => {
-      const r = el.getBoundingClientRect();
+    const onScreenVisible = (el, r) => {
       if (r.width < 8 || r.height < 8) return false;
       if (r.right <= 0 || r.bottom <= 0 || r.left < -1000) return false;
       if (r.left >= docW) return false;                 // off to the right of the layout
@@ -514,45 +525,31 @@ const OVERLAY_JS = `() => {
     // Single-tier RED marker: badge (e1, e2, ...) pinned to the element's
     // top-left corner + red outline. Hover isolates this element (dims the
     // rest) and shows a translucent red fill so the box is unmistakable.
-    const mark = (el) => {
-      const rect = el.getBoundingClientRect();
+    //
+    // PERF: selector computation (getShortUniqueSelector / getUniqueSelector)
+    // runs document-wide querySelectorAll per element — O(n²) on element-heavy
+    // pages and the reason the overlay used to take seconds. It is now LAZY:
+    // boxes/badges render instantly, selectors are computed (and cached) only
+    // when the user actually hovers or clicks a badge.
+    const mark = (el, rect, frag) => {
       const ref = 'e' + idx;
-      const tag = el.tagName.toLowerCase();
-
-      let extra = '';
-      if (tag === 'a') {
-        const href = el.getAttribute('href') || '';
-        extra = href ? ' → ' + href : '';
-      } else if (tag === 'input') {
-        const t = el.type || 'text';
-        const ph = el.placeholder ? ' "' + el.placeholder + '"' : '';
-        extra = ' [' + t + ph + ']';
-      } else if (tag === 'textarea') {
-        const ph = el.placeholder ? ' "' + el.placeholder + '"' : '';
-        extra = ' [textarea' + ph + ']';
-      }
-      const aria = el.getAttribute('aria-label');
-      const ariaStr = aria ? ' @"' + aria + '"' : '';
-      const labelText = ref + ' ' + getShortUniqueSelector(el) + extra + ariaStr;
-      const copyStr = getUniqueSelector(el);
 
       const badge = document.createElement('div');
       badge.className = 'pw-ref-badge';
       badge.textContent = ref;
       badge.style.left = (rect.left + window.scrollX) + 'px';
       badge.style.top = (rect.top + window.scrollY) + 'px';
-      document.body.appendChild(badge);
+      frag.appendChild(badge);
 
       el.classList.add('pw-ref-highlight');
 
       const label = document.createElement('div');
       label.className = 'pw-ref-overlay';
-      label.textContent = labelText;
       label.style.left = (rect.left + window.scrollX) + 'px';
       label.style.top = ((rect.top + window.scrollY - 22 < window.scrollY)
         ? rect.top + window.scrollY + 20
         : rect.top + window.scrollY - 20) + 'px';
-      document.body.appendChild(label);
+      frag.appendChild(label);
 
       const fill = document.createElement('div');
       fill.className = 'pw-ref-region-fill';
@@ -560,9 +557,35 @@ const OVERLAY_JS = `() => {
       fill.style.top = (rect.top + window.scrollY) + 'px';
       fill.style.width = rect.width + 'px';
       fill.style.height = rect.height + 'px';
-      document.body.appendChild(fill);
+      frag.appendChild(fill);
+
+      let lazyInfo = null;
+      const computeInfo = () => {
+        if (lazyInfo) return lazyInfo;
+        const tag = el.tagName.toLowerCase();
+        let extra = '';
+        if (tag === 'a') {
+          const href = el.getAttribute('href') || '';
+          extra = href ? ' → ' + href : '';
+        } else if (tag === 'input') {
+          const t = el.type || 'text';
+          const ph = el.placeholder ? ' "' + el.placeholder + '"' : '';
+          extra = ' [' + t + ph + ']';
+        } else if (tag === 'textarea') {
+          const ph = el.placeholder ? ' "' + el.placeholder + '"' : '';
+          extra = ' [textarea' + ph + ']';
+        }
+        const aria = el.getAttribute('aria-label');
+        const ariaStr = aria ? ' @"' + aria + '"' : '';
+        lazyInfo = {
+          labelText: ref + ' ' + getShortUniqueSelector(el) + extra + ariaStr,
+          copyStr: getUniqueSelector(el),
+        };
+        return lazyInfo;
+      };
 
       badge.addEventListener('mouseenter', () => {
+        label.textContent = computeInfo().labelText;
         document.querySelectorAll('.pw-ref-highlight').forEach(e => e.classList.add('pw-ref-dimmed'));
         el.classList.remove('pw-ref-dimmed');
         el.classList.add('pw-ref-focused');
@@ -580,6 +603,7 @@ const OVERLAY_JS = `() => {
       badge.addEventListener('click', (ev) => {
         ev.stopPropagation();
         ev.preventDefault();
+        const copyStr = computeInfo().copyStr;
         navigator.clipboard.writeText(copyStr).then(() => {
           badge.classList.add('pw-copied');
           const old = document.querySelector('.pw-ref-tooltip');
@@ -598,15 +622,24 @@ const OVERLAY_JS = `() => {
 
     // Badge every visible content box + interactive element (skip transparent
     // layout wrappers and off-screen/clipped elements — see onScreenVisible).
+    //
+    // PERF: reads and writes are split into two phases. Phase 1 only READS
+    // layout (rects/styles); phase 2 only WRITES (markers built into a
+    // fragment, appended once). Interleaving them forced a reflow per element.
     const sels = 'div,span,a[href],button,input,select,textarea,[role=button],[role=link],[role=tab],[role=menuitem]';
+    const candidates = [];
     document.querySelectorAll(sels).forEach(el => {
-      if (!onScreenVisible(el)) return;
+      const rect = el.getBoundingClientRect();
+      if (!onScreenVisible(el, rect)) return;
       const tag = el.tagName.toLowerCase();
-      const cs = window.getComputedStyle(el);
       const interactive = INTERACTIVE.has(tag) || el.hasAttribute('role');
-      if (!interactive && !isVisibleBox(el, cs)) return;
-      mark(el);
+      if (!interactive && !isVisibleBox(el, window.getComputedStyle(el))) return;
+      candidates.push({ el, rect });
     });
+
+    const frag = document.createDocumentFragment();
+    candidates.forEach(c => mark(c.el, c.rect, frag));
+    document.body.appendChild(frag);
 
     return idx - 1;
   }`;
@@ -614,29 +647,43 @@ const OVERLAY_JS = `() => {
 /**
  * Visualize every element on the currently open page: connect directly over
  * CDP to the running browser, inject numbered badges (e1, e2, ...) + hover
- * selector labels + click-to-copy into the active tab, then take a full-page
+ * selector labels + click-to-copy into the active tab, then take a
  * screenshot. Best-effort — any failure is logged, never thrown.
+ *
+ * FAST by default: boxes render immediately — no auto-scroll and NO
+ * screenshot (speed is the point; the user reads the boxes on screen, clicks
+ * a badge to copy its selector, and asks to crawl just that part). Pass
+ * `options.full` to auto-scroll first (triggers lazy-loaded content) and
+ * capture a full-page screenshot — the old, slower behavior.
  */
 export const visualizePageReferences = async (
   config: BrowserConfig,
+  options?: { readonly full?: boolean },
 ): Promise<void> => {
+  const full = options?.full === true;
   try {
     log('Connecting to the running browser over CDP...', 'info');
     await withActivePage(config.port, async (page) => {
-      log(
-        '페이지 요소를 시각화 중입니다 (자동 스크롤 + 라벨 오버레이)...',
-        'info',
-      );
       // evaluate(string) runs an expression — wrap as IIFE so the function
       // strings are actually invoked (and their promises awaited).
-      await page.evaluate(`(${AUTO_SCROLL_JS})()`);
-      await page.evaluate(`(${OVERLAY_JS})()`);
+      if (full) {
+        log(
+          '전체 스캔 모드(--full): 자동 스크롤로 지연 로딩 콘텐츠까지 불러오는 중...',
+          'info',
+        );
+        await page.evaluate(`(${AUTO_SCROLL_JS})()`);
+      }
+      log('페이지 요소를 즉시 시각화 중입니다 (박스 + 번호 배지)...', 'info');
+      const count = await page.evaluate(`(${OVERLAY_JS})()`);
+      log(`✅ ${String(count)}개 요소에 박스를 표시했습니다`, 'success');
 
-      log('Capturing full-page screenshot...', 'info');
-      await page.screenshot({ path: VISUAL_SCREENSHOT_PATH, fullPage: true });
+      if (full) {
+        log('Capturing full-page screenshot...', 'info');
+        await page.screenshot({ path: VISUAL_SCREENSHOT_PATH, fullPage: true });
+        log(`📸 Screenshot saved: ${VISUAL_SCREENSHOT_PATH}`, 'success');
+      }
     });
 
-    log(`📸 Screenshot saved: ${VISUAL_SCREENSHOT_PATH}`, 'success');
     log(
       'Click a badge (e1, e2, e3...) to copy its CSS selector to the clipboard',
       'info',

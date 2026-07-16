@@ -26,12 +26,25 @@ import type { PageAnalysis } from './types.js';
 const ANALYZE_JS = `() => {
     const docW = document.documentElement.clientWidth;
 
+    // Memoized per-ancestor clipping info (same optimization as OVERLAY_JS):
+    // deep trees share the same few overflow containers, so caching avoids
+    // recomputing getComputedStyle thousands of times.
+    const clipInfoCache = new Map();
+    const getClipInfo = (p) => {
+      const cached = clipInfoCache.get(p);
+      if (cached !== undefined) return cached;
+      const ps = window.getComputedStyle(p);
+      const clips = /(hidden|scroll|auto|clip)/.test(ps.overflow + ps.overflowX + ps.overflowY);
+      const info = clips ? { clips: true, rect: p.getBoundingClientRect() } : { clips: false };
+      clipInfoCache.set(p, info);
+      return info;
+    };
     const isClipped = (el, r) => {
       let p = el.parentElement;
       while (p && p !== document.body) {
-        const ps = window.getComputedStyle(p);
-        if (/(hidden|scroll|auto|clip)/.test(ps.overflow + ps.overflowX + ps.overflowY)) {
-          const pr = p.getBoundingClientRect();
+        const info = getClipInfo(p);
+        if (info.clips) {
+          const pr = info.rect;
           if (r.right <= pr.left + 1 || r.left >= pr.right - 1 ||
               r.bottom <= pr.top + 1 || r.top >= pr.bottom - 1) return true;
         }
