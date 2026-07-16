@@ -9,6 +9,11 @@
 
 import http from 'node:http';
 import type { Browser, Page } from 'playwright-core';
+import {
+  hasNativeWebSocket,
+  isWsConnectError,
+  evaluateOverWs,
+} from './cdp-ws.js';
 
 /**
  * Minimal GET against Chrome's local CDP HTTP endpoints (/json/list,
@@ -41,6 +46,7 @@ interface CdpTarget {
   type?: string;
   url?: string;
   title?: string;
+  webSocketDebuggerUrl?: string;
 }
 
 /**
@@ -78,6 +84,58 @@ const fetchMruContentUrl = (port: number): Promise<string | undefined> =>
   listContentTargets(port)
     .then((targets) => targets[0]?.url)
     .catch(() => undefined);
+
+/** The user's active tab as a CDP target (MRU-first). */
+export interface ActiveTarget {
+  readonly id: string;
+  readonly url: string;
+  readonly title: string;
+  readonly wsUrl: string;
+}
+
+/**
+ * Resolve the user's active tab straight from /json/list (MRU order) —
+ * including its own webSocketDebuggerUrl, so evaluate-class work can talk to
+ * EXACTLY that tab without attaching to any other.
+ */
+export const getActiveTarget = async (
+  port: number,
+): Promise<ActiveTarget | undefined> => {
+  const first = (await listContentTargets(port))[0];
+  return first
+    ? {
+        id: first.id,
+        url: first.url ?? '',
+        title: first.title ?? '',
+        wsUrl: first.webSocketDebuggerUrl ?? '',
+      }
+    : undefined;
+};
+
+/**
+ * Run a JS expression in the active tab. FAST PATH: direct WebSocket to that
+ * one tab (no playwright load, no attach to other tabs, hard timeout instead
+ * of playwright's 180s protocol stall). Falls back to the playwright path
+ * when native WebSocket is unavailable (Node <22) or the socket won't open.
+ */
+export const evaluateInActiveTab = async (
+  port: number,
+  expression: string,
+  timeoutMs: number = 30_000,
+): Promise<unknown> => {
+  const target = hasNativeWebSocket()
+    ? await getActiveTarget(port)
+    : undefined;
+  if (target?.wsUrl) {
+    try {
+      return await evaluateOverWs(target.wsUrl, expression, timeoutMs);
+    } catch (error) {
+      if (!isWsConnectError(error)) throw error;
+      // Socket-level failure only — retry through playwright below.
+    }
+  }
+  return withActivePage(port, (page) => page.evaluate(expression));
+};
 
 /**
  * All content pages across every context, in stable order.
@@ -167,12 +225,13 @@ export const withActivePage = <T>(
 
 /**
  * Run arbitrary JS (expression or function string) in the active tab and
- * return its serializable result.
+ * return its serializable result. Function-source strings are auto-invoked
+ * on both paths (playwright natively; the WS path via runtime-type check).
  */
 export const evalInActivePage = (
   port: number,
   code: string,
-): Promise<unknown> => withActivePage(port, (page) => page.evaluate(code));
+): Promise<unknown> => evaluateInActiveTab(port, code);
 
 /** Remove all visualization overlays (badges, boxes, labels) from the tab. */
 const CLEAR_OVERLAY_JS = `() => {
@@ -181,10 +240,9 @@ const CLEAR_OVERLAY_JS = `() => {
   return true;
 }`;
 
-export const clearOverlays = (port: number): Promise<void> =>
-  withActivePage(port, async (page) => {
-    await page.evaluate(`(${CLEAR_OVERLAY_JS})()`);
-  });
+export const clearOverlays = async (port: number): Promise<void> => {
+  await evaluateInActiveTab(port, `(${CLEAR_OVERLAY_JS})()`, 10_000);
+};
 
 /**
  * Navigate the active tab and wait for the load event. Returns the title.

@@ -8,7 +8,8 @@ import path from 'node:path';
 import { execCommand, getVersionFromPackageJson, getLatestVersionFromNpm, checkPortAvailable, getOsType, getProfilePath, } from './utils.js';
 import { detectChrome } from './detector.js';
 import { log } from './logger.js';
-import { withActivePage } from './cdp.js';
+import { withActivePage, getActiveTarget } from './cdp.js';
+import { hasNativeWebSocket, withTargetWs } from './cdp-ws.js';
 const START_URL = 'https://www.google.com';
 const VISUAL_SCREENSHOT_PATH = path.join(tmpdir(), 'ttj-refs-visual.png');
 const RETRY_INTERVAL_MS = 100;
@@ -636,23 +637,57 @@ const OVERLAY_JS = `() => {
 export const visualizePageReferences = async (config, options) => {
     const full = options?.full === true;
     try {
-        log('Connecting to the running browser over CDP...', 'info');
-        await withActivePage(config.port, async (page) => {
-            // evaluate(string) runs an expression — wrap as IIFE so the function
-            // strings are actually invoked (and their promises awaited).
-            if (full) {
-                log('전체 스캔 모드(--full): 자동 스크롤로 지연 로딩 콘텐츠까지 불러오는 중...', 'info');
-                await page.evaluate(`(${AUTO_SCROLL_JS})()`);
-            }
-            log('페이지 요소를 즉시 시각화 중입니다 (박스 + 번호 배지)...', 'info');
-            const count = await page.evaluate(`(${OVERLAY_JS})()`);
-            log(`✅ ${String(count)}개 요소에 박스를 표시했습니다`, 'success');
-            if (full) {
-                log('Capturing full-page screenshot...', 'info');
-                await page.screenshot({ path: VISUAL_SCREENSHOT_PATH, fullPage: true });
-                log(`📸 Screenshot saved: ${VISUAL_SCREENSHOT_PATH}`, 'success');
-            }
-        });
+        const target = hasNativeWebSocket()
+            ? await getActiveTarget(config.port)
+            : undefined;
+        if (target?.wsUrl) {
+            // FAST PATH: direct WebSocket to the MRU tab only. Cannot draw on the
+            // wrong tab, never stalls on other (hung/loading) tabs, and every step
+            // has a hard timeout instead of playwright's 180s protocol wait.
+            log(`대상 탭: ${target.title || target.url}`, 'info');
+            await withTargetWs(target.wsUrl, async (send) => {
+                if (full) {
+                    log('전체 스캔 모드(--full): 자동 스크롤로 지연 로딩 콘텐츠까지 불러오는 중...', 'info');
+                    await send('Runtime.evaluate', {
+                        expression: `(${AUTO_SCROLL_JS})()`,
+                        awaitPromise: true,
+                        returnByValue: true,
+                    });
+                }
+                log('페이지 요소를 즉시 시각화 중입니다 (박스 + 번호 배지)...', 'info');
+                const evaluated = (await send('Runtime.evaluate', {
+                    expression: `(${OVERLAY_JS})()`,
+                    returnByValue: true,
+                }));
+                log(`✅ ${String(evaluated.result?.value ?? '?')}개 요소에 박스를 표시했습니다`, 'success');
+                if (full) {
+                    log('Capturing full-page screenshot...', 'info');
+                    const shot = (await send('Page.captureScreenshot', {
+                        captureBeyondViewport: true,
+                    }));
+                    await writeFile(VISUAL_SCREENSHOT_PATH, Buffer.from(shot.data ?? '', 'base64'));
+                    log(`📸 Screenshot saved: ${VISUAL_SCREENSHOT_PATH}`, 'success');
+                }
+            }, full ? 180000 : 15000);
+        }
+        else {
+            // Fallback (Node <22 or no wsUrl): playwright path.
+            log('Connecting to the running browser over CDP...', 'info');
+            await withActivePage(config.port, async (page) => {
+                if (full) {
+                    log('전체 스캔 모드(--full): 자동 스크롤로 지연 로딩 콘텐츠까지 불러오는 중...', 'info');
+                    await page.evaluate(`(${AUTO_SCROLL_JS})()`);
+                }
+                log('페이지 요소를 즉시 시각화 중입니다 (박스 + 번호 배지)...', 'info');
+                const count = await page.evaluate(`(${OVERLAY_JS})()`);
+                log(`✅ ${String(count)}개 요소에 박스를 표시했습니다`, 'success');
+                if (full) {
+                    log('Capturing full-page screenshot...', 'info');
+                    await page.screenshot({ path: VISUAL_SCREENSHOT_PATH, fullPage: true });
+                    log(`📸 Screenshot saved: ${VISUAL_SCREENSHOT_PATH}`, 'success');
+                }
+            });
+        }
         log('Click a badge (e1, e2, e3...) to copy its CSS selector to the clipboard', 'info');
         log('✅ Visualization complete', 'success');
     }

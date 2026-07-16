@@ -6,7 +6,7 @@
  * meta) so an AI can propose "what can be crawled here" to the user.
  */
 
-import { withActivePage } from './cdp.js';
+import { evaluateInActiveTab } from './cdp.js';
 import type { PageAnalysis } from './types.js';
 
 /**
@@ -249,8 +249,9 @@ const ANALYZE_JS = `() => {
 /**
  * Analyze the active page's structure over CDP and return a PageAnalysis.
  * Pure orchestration — the heavy lifting runs browser-side in ANALYZE_JS.
+ * Uses the direct-WebSocket fast path (exact MRU tab, hard 30s timeout).
  */
 export const analyzeActivePage = (port: number): Promise<PageAnalysis> =>
-  withActivePage(port, (page) =>
-    page.evaluate(`(${ANALYZE_JS})()`).then((result) => result as PageAnalysis),
+  evaluateInActiveTab(port, `(${ANALYZE_JS})()`, 30_000).then(
+    (result) => result as PageAnalysis,
   );
