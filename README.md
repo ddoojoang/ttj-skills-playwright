@@ -3,16 +3,19 @@
 > A CLI that drives an existing Chrome over CDP (Playwright core) with instant one-shot commands.
 
 Built so an AI agent (Claude Code, Codex) and the user can **work on the same browser screen**.
-It attaches to a running Chrome over the Chrome DevTools Protocol via `playwright-core`, so there is
-no session management and each command finishes in ~0.4s.
+It attaches to a running Chrome over the Chrome DevTools Protocol — evaluate-class commands talk to
+the active tab over its own dedicated WebSocket (no session management, no attach to other tabs), so
+most commands finish in **~0.1s**.
 
-- ✅ Dedicated Chrome (CDP port 9227, fixed profile — login sessions persist)
+- ✅ Dedicated Chrome (CDP port 9227, fixed profile — login sessions persist, window always maximized)
 - ✅ One-shot commands: `eval` / `goto` / `click` / `type` / `wait` / `tabs` / `screenshot`
-- ✅ **Auto-relaunches** the browser if it was closed, then continues
+- ✅ `batch`: run a whole goto→click→type→wait→eval sequence in one process + one connection
+- ✅ **Auto-relaunches** the browser if it was closed, then continues; reuses a running one without adding tabs
+- ✅ Always targets the tab the user actually works in (Chrome's most-recently-used order — never a stale start tab)
 - ✅ `click`/`type` use real CDP input events (isTrusted=true); `type` adds a 100–300ms per-key random delay
-- ✅ Page element visualization (`--visualize`): badge overlay + hover selector + click-to-copy
+- ✅ Instant element visualization (`--visualize`): red boxes + numbered badges in under a second, hover to inspect, click a badge to copy its CSS selector (`--full` for lazy-load auto-scroll + full-page screenshot)
 - ✅ Crawl-target analysis (`analyze`): red-box overlay + structure JSON (repeating lists, tables, forms) to stdout
-- ✅ Daily auto-update check
+- ✅ Daily auto-update check (background, never blocks a run)
 
 ## Requirements
 
@@ -50,10 +53,13 @@ ttj-skills-playwright tabs
 ttj-skills-playwright tab 2
 ttj-skills-playwright screenshot /tmp/shot.png --full
 
-# Visualize every element (badge overlay + full-page screenshot)
+# Multi-step sequence in ONE process + ONE connection
+ttj-skills-playwright batch '[{"cmd":"click","selector":"#login"},{"cmd":"wait","selector":"#form"},{"cmd":"eval","code":"location.href"}]'
+
+# Visualize every element (instant red boxes + numbered badges; --full adds auto-scroll + screenshot)
 ttj-skills-playwright --visualize
 
-# Analyze crawl targets (red boxes + full-page screenshot + structure JSON on stdout)
+# Analyze crawl targets (red boxes + structure JSON on stdout; --full adds auto-scroll + screenshot)
 ttj-skills-playwright analyze
 
 # Remove overlays

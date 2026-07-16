@@ -57,7 +57,7 @@ When you see that reuse output:
 
 **After the user opens the browser with this skill, every browser action MUST use the commands below only.**
 
-| Goal | Command (instant, ~0.4s) |
+| Goal | Command (instant, ~0.1s) |
 |---|---|
 | Run JS / read DOM / change styles | `ttj-skills-playwright eval "<js>"` |
 | Navigate (waits for load) | `ttj-skills-playwright goto <url>` |
