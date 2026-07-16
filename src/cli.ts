@@ -34,7 +34,9 @@ import {
   listTabs,
   activateTab,
   clearOverlays,
+  runBatchInActivePage,
 } from './cdp.js';
+import type { BatchStep } from './cdp.js';
 import { analyzeActivePage } from './analyzer.js';
 
 /**
@@ -61,6 +63,7 @@ Commands:
   tab <n>                  Bring tab n to the front
   clear                    Remove visualization overlays from the page
   analyze [--full]         Overlay red boxes + print page structure JSON (crawl targets)
+  batch '<json-steps>'     Run several actions in one process + one CDP connection
   screenshot [path] [--full]  Capture the active tab (default: <tmpdir>/ttj-screenshot.png)
 
 Options:
@@ -79,6 +82,7 @@ Examples:
   $ ttj-skills-playwright --visualize  # Instant element boxes + screenshot
   $ ttj-skills-playwright analyze      # Red boxes + JSON of crawlable structure
   $ ttj-skills-playwright analyze --full  # Slower: auto-scroll whole page first
+  $ ttj-skills-playwright batch '[{"cmd":"click","selector":"#login"},{"cmd":"wait","selector":"#form"},{"cmd":"type","selector":"#id","text":"user"},{"cmd":"eval","code":"location.href"}]'
 `;
 
 /**
@@ -476,6 +480,44 @@ const runAnalyze = async (): Promise<void> => {
 };
 
 /**
+ * Parse the `batch` JSON argument into steps, or undefined when invalid.
+ */
+const parseBatchSteps = (json: string): BatchStep[] | undefined => {
+  try {
+    const parsed = JSON.parse(json) as unknown;
+    return Array.isArray(parsed) && parsed.length > 0
+      ? (parsed as BatchStep[])
+      : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+/**
+ * `batch '<json-steps>'` — run several actions in ONE process + ONE CDP
+ * connection. stdout is the JSON results array only (the AI parses it);
+ * human notes go through log().
+ */
+const runBatch = async (json?: string): Promise<void> => {
+  const steps = json === undefined ? undefined : parseBatchSteps(json);
+  if (!steps) {
+    log(
+      'Usage: ttj-skills-playwright batch \'[{"cmd":"click","selector":"#btn"},{"cmd":"eval","code":"location.href"}]\' — non-empty JSON array required (cmds: goto|click|type|wait|eval|screenshot)',
+      'error',
+    );
+    process.exitCode = 1;
+    return;
+  }
+  const port = await resolveRunningPort();
+  if (port === undefined) return;
+  const results = await runBatchInActivePage(port, steps);
+  console.log(JSON.stringify(results, null, 2));
+  if (results.some((r) => !r.ok)) {
+    process.exitCode = 1;
+  }
+};
+
+/**
  * `screenshot [path] [--full]` — capture the active tab over CDP.
  */
 const runScreenshot = async (args: readonly string[]): Promise<void> => {
@@ -506,6 +548,7 @@ const SUBCOMMANDS: Record<string, (() => Promise<void>) | undefined> = {
   clear: () => runClear(),
   analyze: () => runAnalyze(),
   screenshot: () => runScreenshot(commandArgs),
+  batch: () => runBatch(commandArgs[0]),
 };
 
 const dispatch = (): Promise<void> =>

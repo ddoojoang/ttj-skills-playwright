@@ -225,6 +225,23 @@ export const clickInActivePage = (
 const humanTypeDelay = (): number => 100 + Math.random() * 200;
 
 /**
+ * Type text into a page element with real (trusted) keyboard events, one
+ * character at a time with a randomized human-like delay.
+ */
+const typeIntoPage = async (
+  page: Page,
+  selector: string,
+  text: string,
+): Promise<void> => {
+  await page.click(selector, { timeout: ACTION_TIMEOUT_MS });
+  await [...text].reduce(async (prev, char) => {
+    await prev;
+    await page.keyboard.type(char);
+    await new Promise((resolve) => setTimeout(resolve, humanTypeDelay()));
+  }, Promise.resolve());
+};
+
+/**
  * Type text into an element with real (trusted) keyboard events, one
  * character at a time with a randomized human-like delay.
  */
@@ -233,14 +250,7 @@ export const typeInActivePage = (
   selector: string,
   text: string,
 ): Promise<void> =>
-  withActivePage(port, async (page) => {
-    await page.click(selector, { timeout: ACTION_TIMEOUT_MS });
-    await [...text].reduce(async (prev, char) => {
-      await prev;
-      await page.keyboard.type(char);
-      await new Promise((resolve) => setTimeout(resolve, humanTypeDelay()));
-    }, Promise.resolve());
-  });
+  withActivePage(port, (page) => typeIntoPage(page, selector, text));
 
 /**
  * Wait until a selector appears in the active tab.
@@ -253,6 +263,103 @@ export const waitInActivePage = (
   withActivePage(port, async (page) => {
     await page.waitForSelector(selector, { timeout: timeoutMs });
   });
+
+/**
+ * One step of a `batch` run. `cmd` picks the action; the other fields are
+ * that action's arguments (validated at execution time).
+ */
+export interface BatchStep {
+  readonly cmd: 'goto' | 'click' | 'type' | 'wait' | 'eval' | 'screenshot';
+  readonly url?: string;
+  readonly selector?: string;
+  readonly text?: string;
+  readonly code?: string;
+  readonly path?: string;
+  readonly timeout?: number;
+  readonly full?: boolean;
+}
+
+export interface BatchStepResult {
+  readonly step: number;
+  readonly cmd: string;
+  readonly ok: boolean;
+  readonly result?: unknown;
+  readonly error?: string;
+}
+
+const requireField = (value: string | undefined, name: string): string => {
+  if (value === undefined || value === '') {
+    throw new Error(`missing required field "${name}"`);
+  }
+  return value;
+};
+
+const WAIT_TIMEOUT_MS = 10_000;
+
+const BATCH_HANDLERS: Record<
+  BatchStep['cmd'],
+  (page: Page, step: BatchStep) => Promise<unknown>
+> = {
+  goto: async (page, step) => {
+    await page.goto(requireField(step.url, 'url'), { waitUntil: 'load' });
+    return page.title();
+  },
+  click: (page, step) =>
+    page
+      .click(requireField(step.selector, 'selector'), {
+        timeout: step.timeout ?? ACTION_TIMEOUT_MS,
+      })
+      .then(() => 'clicked'),
+  type: (page, step) =>
+    typeIntoPage(
+      page,
+      requireField(step.selector, 'selector'),
+      requireField(step.text, 'text'),
+    ).then(() => 'typed'),
+  wait: (page, step) =>
+    page
+      .waitForSelector(requireField(step.selector, 'selector'), {
+        timeout: step.timeout ?? WAIT_TIMEOUT_MS,
+      })
+      .then(() => 'found'),
+  eval: (page, step) => page.evaluate(requireField(step.code, 'code')),
+  screenshot: async (page, step) => {
+    const outputPath = requireField(step.path, 'path');
+    await page.screenshot({ path: outputPath, fullPage: step.full === true });
+    return outputPath;
+  },
+};
+
+/**
+ * Run a sequence of actions against the active tab over ONE process and ONE
+ * CDP connection (instead of one process + reconnect per action). Steps run
+ * in order; the first failure marks the run failed and every remaining step
+ * is reported as skipped.
+ */
+export const runBatchInActivePage = (
+  port: number,
+  steps: readonly BatchStep[],
+): Promise<BatchStepResult[]> =>
+  withActivePage(port, (page) =>
+    steps.reduce<Promise<BatchStepResult[]>>(async (accPromise, step, index) => {
+      const acc = await accPromise;
+      const base = { step: index + 1, cmd: String(step.cmd) };
+      if (acc.some((r) => !r.ok)) {
+        return [...acc, { ...base, ok: false, error: 'skipped (previous step failed)' }];
+      }
+      const handler = BATCH_HANDLERS[step.cmd];
+      if (!handler) {
+        return [...acc, { ...base, ok: false, error: `unknown cmd "${String(step.cmd)}" (goto|click|type|wait|eval|screenshot)` }];
+      }
+      try {
+        const result = await handler(page, step);
+        return [...acc, { ...base, ok: true, result }];
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return [...acc, { ...base, ok: false, error: message }];
+      }
+    }, Promise.resolve([])),
+  );
 
 export interface TabInfo {
   index: number;

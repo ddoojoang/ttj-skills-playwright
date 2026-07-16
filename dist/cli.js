@@ -10,7 +10,7 @@ import { log } from './logger.js';
 import { getProfilePath, findAvailablePort, checkPortAvailable, findRunningCdpPort, getPidForPort, } from './utils.js';
 import { detectChrome, ensureProfile } from './detector.js';
 import { launchBrowser, autoUpdateIfNeeded, verifyBrowserReady, visualizePageReferences, detectExistingBrowser, bringWindowToFront, } from './browser.js';
-import { evalInActivePage, gotoInActivePage, screenshotActivePage, clickInActivePage, typeInActivePage, waitInActivePage, listTabs, activateTab, clearOverlays, } from './cdp.js';
+import { evalInActivePage, gotoInActivePage, screenshotActivePage, clickInActivePage, typeInActivePage, waitInActivePage, listTabs, activateTab, clearOverlays, runBatchInActivePage, } from './cdp.js';
 import { analyzeActivePage } from './analyzer.js';
 /**
  * Read the package version dynamically from package.json (ESM-safe).
@@ -33,6 +33,7 @@ Commands:
   tab <n>                  Bring tab n to the front
   clear                    Remove visualization overlays from the page
   analyze [--full]         Overlay red boxes + print page structure JSON (crawl targets)
+  batch '<json-steps>'     Run several actions in one process + one CDP connection
   screenshot [path] [--full]  Capture the active tab (default: <tmpdir>/ttj-screenshot.png)
 
 Options:
@@ -51,6 +52,7 @@ Examples:
   $ ttj-skills-playwright --visualize  # Instant element boxes + screenshot
   $ ttj-skills-playwright analyze      # Red boxes + JSON of crawlable structure
   $ ttj-skills-playwright analyze --full  # Slower: auto-scroll whole page first
+  $ ttj-skills-playwright batch '[{"cmd":"click","selector":"#login"},{"cmd":"wait","selector":"#form"},{"cmd":"type","selector":"#id","text":"user"},{"cmd":"eval","code":"location.href"}]'
 `;
 /**
  * Handle informational CLI flags (--version, --help).
@@ -370,6 +372,41 @@ const runAnalyze = async () => {
     console.log(JSON.stringify(result, null, 2));
 };
 /**
+ * Parse the `batch` JSON argument into steps, or undefined when invalid.
+ */
+const parseBatchSteps = (json) => {
+    try {
+        const parsed = JSON.parse(json);
+        return Array.isArray(parsed) && parsed.length > 0
+            ? parsed
+            : undefined;
+    }
+    catch {
+        return undefined;
+    }
+};
+/**
+ * `batch '<json-steps>'` — run several actions in ONE process + ONE CDP
+ * connection. stdout is the JSON results array only (the AI parses it);
+ * human notes go through log().
+ */
+const runBatch = async (json) => {
+    const steps = json === undefined ? undefined : parseBatchSteps(json);
+    if (!steps) {
+        log('Usage: ttj-skills-playwright batch \'[{"cmd":"click","selector":"#btn"},{"cmd":"eval","code":"location.href"}]\' — non-empty JSON array required (cmds: goto|click|type|wait|eval|screenshot)', 'error');
+        process.exitCode = 1;
+        return;
+    }
+    const port = await resolveRunningPort();
+    if (port === undefined)
+        return;
+    const results = await runBatchInActivePage(port, steps);
+    console.log(JSON.stringify(results, null, 2));
+    if (results.some((r) => !r.ok)) {
+        process.exitCode = 1;
+    }
+};
+/**
  * `screenshot [path] [--full]` — capture the active tab over CDP.
  */
 const runScreenshot = async (args) => {
@@ -397,6 +434,7 @@ const SUBCOMMANDS = {
     clear: () => runClear(),
     analyze: () => runAnalyze(),
     screenshot: () => runScreenshot(commandArgs),
+    batch: () => runBatch(commandArgs[0]),
 };
 const dispatch = () => (command !== undefined && SUBCOMMANDS[command]?.()) || main();
 dispatch().catch((error) => {

@@ -65,6 +65,7 @@ When you see that reuse output:
 | Type (human-like random delay) | `ttj-skills-playwright type "<selector>" "<text>"` |
 | Wait for an element (SPA / lazy) | `ttj-skills-playwright wait "<selector>" [timeoutMs]` |
 | List / switch tabs | `ttj-skills-playwright tabs` / `ttj-skills-playwright tab <n>` |
+| Multi-step sequence (1 connection) | `ttj-skills-playwright batch '<json-steps>'` |
 | Screenshot | `ttj-skills-playwright screenshot [path] [--full]` |
 | Visualize elements (show HTML structure) | `ttj-skills-playwright --visualize` |
 | Analyze crawl targets (red boxes + JSON) | `ttj-skills-playwright analyze` |
@@ -81,6 +82,24 @@ The browser opens on google.com, but the user navigates away — never assume th
 - Only skip the question when the user already named the tab/site in their request (e.g. "네이버 탭에서 요소 보여줘") — then switch to the matching tab yourself and say so.
 
 > 💡 **Prefer click/type over eval**: `eval`'s `el.click()` is an untrusted JS event (isTrusted=false) that login/checkout buttons may ignore. `click`/`type` dispatch real input events via CDP, and `type` applies a per-character 100–300ms random delay (bot-detection etiquette).
+
+## 🚨 Multi-step work = ONE tool call (never one call per action)
+
+Running each action as a separate Bash tool call wastes seconds of round-trip per step. When you already know the next 2+ actions:
+
+1. **Preferred — `batch`**: one process + ONE CDP connection for the whole sequence. Steps run in order; on the first failure the remaining steps are skipped and reported. stdout = JSON results array (parse it; non-zero exit = some step failed):
+```bash
+ttj-skills-playwright batch '[
+  {"cmd":"click","selector":"#login-btn"},
+  {"cmd":"wait","selector":"#login-form","timeout":5000},
+  {"cmd":"type","selector":"#username","text":"myuser"},
+  {"cmd":"eval","code":"location.href"}
+]'
+```
+Step fields: `goto{url}` · `click{selector,timeout?}` · `type{selector,text}` · `wait{selector,timeout?}` · `eval{code}` · `screenshot{path,full?}`.
+2. **Fallback — `&&` chaining** for mixes batch can't express (e.g. `tab 2 && … --visualize`): `ttj-skills-playwright tab 2 && ttj-skills-playwright eval "document.title"`.
+
+Use single one-shot commands only when the next action genuinely depends on output you must reason about first.
 
 **Never do this:**
 - ❌ Pre-flight checks (`curl :9227`, `ps aux`, `playwright-cli list`) — the commands find the browser themselves
