@@ -72,10 +72,11 @@ export const getVersionFromPackageJson = async () => {
 };
 /**
  * Fetch a URL and resolve the parsed JSON body (pure HTTPS helper).
+ * Hard timeout so a slow/unreachable registry can never stall the CLI.
  */
-const fetchJson = (url) => new Promise((resolve, reject) => {
-    https
-        .get(url, (res) => {
+const fetchJson = (url, timeoutMs = 1500) => new Promise((resolve, reject) => {
+    const req = https
+        .get(url, { timeout: timeoutMs }, (res) => {
         const chunks = [];
         res.on('data', (chunk) => chunks.push(chunk));
         res.on('end', () => {
@@ -88,6 +89,9 @@ const fetchJson = (url) => new Promise((resolve, reject) => {
         });
     })
         .on('error', reject);
+    req.on('timeout', () => {
+        req.destroy(new Error(`fetchJson timeout after ${timeoutMs}ms: ${url}`));
+    });
 });
 /**
  * Query the npm registry for the latest published version.
@@ -121,7 +125,7 @@ export const findAvailablePort = async (startPort = 9227) => {
  * Resolves true only when a Chrome DevTools Protocol server answers there.
  */
 export const isCdpResponding = (port) => new Promise((resolve) => {
-    const req = http.get({ host: '127.0.0.1', port, path: '/json/version', timeout: 500 }, (res) => {
+    const req = http.get({ host: '127.0.0.1', port, path: '/json/version', timeout: 300 }, (res) => {
         const ok = res.statusCode === 200;
         res.resume();
         resolve(ok);
@@ -134,17 +138,16 @@ export const isCdpResponding = (port) => new Promise((resolve) => {
 });
 /**
  * Find a running CDP browser by probing ports startPort..startPort+span.
- * Returns the first responding port, or undefined if none respond. This lets
+ * Returns the lowest responding port, or undefined if none respond. This lets
  * subcommands reuse an already-open browser even when process detection fails,
  * WITHOUT launching a new instance or start tab.
+ *
+ * All ports are probed IN PARALLEL (localhost GETs are cheap), so the whole
+ * scan is bounded by a single probe timeout instead of timeout × port count.
  */
 export const findRunningCdpPort = async (startPort = 9227, span = 10) => {
     const ports = Array.from({ length: span + 1 }, (_, i) => startPort + i);
-    return ports.reduce(async (acc, port) => {
-        const found = await acc;
-        if (found !== undefined)
-            return found;
-        return (await isCdpResponding(port)) ? port : undefined;
-    }, Promise.resolve(undefined));
+    const results = await Promise.all(ports.map(async (port) => ((await isCdpResponding(port)) ? port : undefined)));
+    return results.find((port) => port !== undefined);
 };
 //# sourceMappingURL=utils.js.map

@@ -48,9 +48,12 @@ export declare const findAvailablePort: (startPort?: number) => Promise<number>;
 export declare const isCdpResponding: (port: number) => Promise<boolean>;
 /**
  * Find a running CDP browser by probing ports startPort..startPort+span.
- * Returns the first responding port, or undefined if none respond. This lets
+ * Returns the lowest responding port, or undefined if none respond. This lets
  * subcommands reuse an already-open browser even when process detection fails,
  * WITHOUT launching a new instance or start tab.
+ *
+ * All ports are probed IN PARALLEL (localhost GETs are cheap), so the whole
+ * scan is bounded by a single probe timeout instead of timeout × port count.
  */
 export declare const findRunningCdpPort: (startPort?: number, span?: number) => Promise<number | undefined>;
 //# sourceMappingURL=utils.d.ts.map

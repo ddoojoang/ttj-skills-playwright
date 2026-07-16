@@ -85,11 +85,15 @@ export const getVersionFromPackageJson = async (): Promise<string> => {
 
 /**
  * Fetch a URL and resolve the parsed JSON body (pure HTTPS helper).
+ * Hard timeout so a slow/unreachable registry can never stall the CLI.
  */
-const fetchJson = (url: string): Promise<Record<string, unknown>> =>
+const fetchJson = (
+  url: string,
+  timeoutMs: number = 1500,
+): Promise<Record<string, unknown>> =>
   new Promise((resolve, reject) => {
-    https
-      .get(url, (res) => {
+    const req = https
+      .get(url, { timeout: timeoutMs }, (res) => {
         const chunks: Buffer[] = [];
         res.on('data', (chunk: Buffer) => chunks.push(chunk));
         res.on('end', () => {
@@ -101,6 +105,9 @@ const fetchJson = (url: string): Promise<Record<string, unknown>> =>
         });
       })
       .on('error', reject);
+    req.on('timeout', () => {
+      req.destroy(new Error(`fetchJson timeout after ${timeoutMs}ms: ${url}`));
+    });
   });
 
 /**
@@ -143,7 +150,7 @@ export const findAvailablePort = async (
 export const isCdpResponding = (port: number): Promise<boolean> =>
   new Promise((resolve) => {
     const req = http.get(
-      { host: '127.0.0.1', port, path: '/json/version', timeout: 500 },
+      { host: '127.0.0.1', port, path: '/json/version', timeout: 300 },
       (res) => {
         const ok = res.statusCode === 200;
         res.resume();
@@ -159,18 +166,20 @@ export const isCdpResponding = (port: number): Promise<boolean> =>
 
 /**
  * Find a running CDP browser by probing ports startPort..startPort+span.
- * Returns the first responding port, or undefined if none respond. This lets
+ * Returns the lowest responding port, or undefined if none respond. This lets
  * subcommands reuse an already-open browser even when process detection fails,
  * WITHOUT launching a new instance or start tab.
+ *
+ * All ports are probed IN PARALLEL (localhost GETs are cheap), so the whole
+ * scan is bounded by a single probe timeout instead of timeout × port count.
  */
 export const findRunningCdpPort = async (
   startPort: number = 9227,
   span: number = 10,
 ): Promise<number | undefined> => {
   const ports = Array.from({ length: span + 1 }, (_, i) => startPort + i);
-  return ports.reduce<Promise<number | undefined>>(async (acc, port) => {
-    const found = await acc;
-    if (found !== undefined) return found;
-    return (await isCdpResponding(port)) ? port : undefined;
-  }, Promise.resolve(undefined));
+  const results = await Promise.all(
+    ports.map(async (port) => ((await isCdpResponding(port)) ? port : undefined)),
+  );
+  return results.find((port) => port !== undefined);
 };

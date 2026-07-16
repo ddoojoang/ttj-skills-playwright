@@ -200,9 +200,13 @@ export const autoUpdateIfNeeded = async () => {
         await writeFile(stampPath, String(Date.now()), 'utf-8');
         const versionInfo = await checkForUpdates();
         if (versionInfo.hasUpdate) {
-            log(`업데이트 중... (${versionInfo.current} → ${versionInfo.latest})`, 'info');
-            await execCommand('npm install -g ttj-skills-playwright@latest');
-            log(`✅ 최신버전이 있어서 업데이트했습니다 (${versionInfo.current} → ${versionInfo.latest})`, 'success');
+            // Never block the CLI on npm: run the install fully detached in the
+            // background. The new version applies from the NEXT run — this run
+            // proceeds immediately on the current version.
+            const npmCmd = getOsType() === 'windows' ? 'npm.cmd' : 'npm';
+            const child = spawn(npmCmd, ['install', '-g', 'ttj-skills-playwright@latest'], { detached: true, stdio: 'ignore', shell: getOsType() === 'windows' });
+            child.unref();
+            log(`🔄 새 버전 발견 (${versionInfo.current} → ${versionInfo.latest}) — 백그라운드에서 업데이트 중, 다음 실행부터 적용됩니다`, 'info');
         }
     }
     catch {

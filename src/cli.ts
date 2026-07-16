@@ -149,11 +149,14 @@ const reuseExistingBrowser = async (
   profilePath: string,
   pid?: number,
 ): Promise<void> => {
-  await bringWindowToFront(pid);
-  log('🔄 Brought Chrome window to front', 'success');
+  // Window focusing (osascript/powershell) and tab listing (CDP) are
+  // independent — run them concurrently to shave startup latency.
+  const frontPromise = bringWindowToFront(pid);
   log('✅ Reused the existing browser — no new tab was opened', 'success');
   log('📋 Currently open tabs:', 'info');
   await printOpenTabs(port);
+  await frontPromise;
+  log('🔄 Brought Chrome window to front', 'success');
   log(
     '💬 AI: report these tabs to the user and ask which tab (n) to work on and what to do',
     'info',
@@ -170,26 +173,30 @@ const reuseExistingBrowser = async (
 const main = async (): Promise<void> => {
   log('🚀 Initializing ttj-skills-playwright...', 'info');
 
-  // 0. 가장 먼저 업데이트 확인 (브라우저를 열기 전에 최신 버전 보장)
-  await autoUpdateIfNeeded();
+  // 0. 업데이트 확인은 브라우저 감지와 '동시에' 시작하고 마지막에만 기다린다.
+  //    실제 npm install은 detached 백그라운드로 돌아 실행을 절대 막지 않는다
+  //    (새 버전은 다음 실행부터 적용).
+  const updatePromise = autoUpdateIfNeeded();
 
   const profilePath = getProfilePath();
 
-  // 1. 기존 브라우저 감지 (프로세스 매칭). 있으면 재사용해서 빠르게 종료.
-  const existing = await detectExistingBrowser(profilePath);
-  if (existing.found && existing.port !== undefined) {
+  // 1. 기존 브라우저 감지: 프로세스 매칭(ps/CIM)과 CDP 포트 프로브를 병렬
+  //    실행 — 어느 쪽이든 찾으면 즉시 재사용. NEVER launch when one exists
+  //    (top invariant: a running browser must never gain an extra tab).
+  const [existing, probedPort] = await Promise.all([
+    detectExistingBrowser(profilePath),
+    findRunningCdpPort(9227),
+  ]);
+  const runningPort =
+    existing.found && existing.port !== undefined ? existing.port : probedPort;
+  if (runningPort !== undefined) {
     log('✅ Existing browser detected', 'success');
-    await reuseExistingBrowser(existing.port, profilePath, existing.pid);
-    return;
-  }
-
-  // 1b. Fallback: process detection may miss even when a browser is running.
-  //     Probe the CDP port and reuse it — NEVER launch (no new tab). This is
-  //     the top invariant: a running browser must never gain an extra tab.
-  const probedPort = await findRunningCdpPort(9227);
-  if (probedPort !== undefined) {
-    log('✅ Existing browser detected via CDP probe', 'success');
-    await reuseExistingBrowser(probedPort, profilePath);
+    await reuseExistingBrowser(
+      runningPort,
+      profilePath,
+      existing.found ? existing.pid : undefined,
+    );
+    await updatePromise;
     return;
   }
 
@@ -237,6 +244,8 @@ const main = async (): Promise<void> => {
     .catch(() => {
       // 조용히 실패 - 검증은 best-effort
     });
+
+  await updatePromise;
 };
 
 const DEFAULT_SCREENSHOT_PATH = path.join(tmpdir(), 'ttj-screenshot.png');
@@ -269,12 +278,13 @@ const isReuseOnly = (): boolean =>
 const resolveRunningPort = async (): Promise<number | undefined> => {
   const profilePath = getProfilePath();
 
-  const existing = await detectExistingBrowser(profilePath);
+  // Process detection (ps/CIM) and the CDP port probe are independent —
+  // run them in parallel; either one finding the browser means reuse.
+  const [existing, probed] = await Promise.all([
+    detectExistingBrowser(profilePath),
+    findRunningCdpPort(9227),
+  ]);
   if (existing.found && existing.port !== undefined) return existing.port;
-
-  // Fallback: a browser may be running even if process detection missed it.
-  // Probe CDP ports and reuse it — no launch, no new tab.
-  const probed = await findRunningCdpPort(9227);
   if (probed !== undefined) return probed;
 
   if (isReuseOnly()) {
