@@ -72,6 +72,14 @@ When you see that reuse output:
 
 Every command auto-detects the running browser (process detection + CDP port probe), connects over CDP, and targets the **visible active tab**. It reuses an already-open browser without adding tabs; it launches a new one only when nothing is running (skip even that with `--no-launch`).
 
+## 🚨 ALWAYS know which site you're on BEFORE acting
+
+The browser opens on google.com, but the user navigates away — never assume the active page. **Before any page action (visualize / analyze / eval / click / type / screenshot), run `ttj-skills-playwright tabs` first** (instant — plain HTTP, ~0.1s; `▶` marks the active tab = the user's most recent tab):
+
+- **1 tab open** → confirm it in your reply ("현재 ○○ 페이지가 열려 있어서 여기서 진행합니다") and proceed on it.
+- **2+ tabs open** → list every tab to the user (`[1] title — url` …) and **ask which tab number to work on**. After the answer, `ttj-skills-playwright tab <n>`, then proceed.
+- Only skip the question when the user already named the tab/site in their request (e.g. "네이버 탭에서 요소 보여줘") — then switch to the matching tab yourself and say so.
+
 > 💡 **Prefer click/type over eval**: `eval`'s `el.click()` is an untrusted JS event (isTrusted=false) that login/checkout buttons may ignore. `click`/`type` dispatch real input events via CDP, and `type` applies a per-character 100–300ms random delay (bot-detection etiquette).
 
 **Never do this:**
@@ -152,11 +160,13 @@ Hover a badge to isolate that element — every other box dims and the hovered e
 
 **Overlay rule**: each `--visualize` clears the previous overlay and shows only the new one. Badges/boxes stay on the page, so run `ttj-skills-playwright clear` for a clean screen/screenshot (no reload needed).
 
-## Crawl-target analysis (analyze)
+## Crawl-target requests → just show the boxes (default)
 
-**Trigger**: "요소 보여줘", "요소 분석", "html 분석해줘", "크롤링 뭐 할 수 있어", "페이지 분석" · "show elements", "analyze this page", "what can I crawl", "크롤링 대상 찾아줘".
+**Trigger**: "크롤링 뭐 할 수 있어", "크롤링할만한거 분석해줘", "크롤링 대상 찾아줘", "페이지 분석" · "what can I crawl", "analyze this page".
 
-`analyze` does two things in one shot: (1) runs the same **instant** red-box visualization (badges `e1, e2, …`; no auto-scroll/screenshot — add `--full` for lazy-load scan + full-page screenshot), then (2) prints a **machine-readable JSON** of the page structure to stdout — this JSON is the last large stdout block. Shape:
+**Default behavior: run `ttj-skills-playwright --visualize` — instant red boxes only. Do NOT run a deep structure analysis.** The user looks at the numbered boxes on screen, clicks a badge to copy its selector (or quotes `e7`), and tells you which part to crawl. That conversation IS the analysis — fast and precise.
+
+Use the `analyze` subcommand **only when the user explicitly asks for a structured/JSON breakdown** (e.g. "구조를 JSON으로 뽑아줘", "리스트/테이블 자동으로 찾아줘") — it additionally prints machine-readable page structure to stdout:
 
 ```jsonc
 {
@@ -174,13 +184,13 @@ Hover a badge to isolate that element — every other box dims and the hovered e
 }
 ```
 
-**AI procedure:**
+**AI procedure (explicit JSON requests only):**
 1. Run `ttj-skills-playwright analyze` (add `--full` only if the user wants below-the-fold/lazy-loaded content too).
 2. Read the JSON from stdout and **judge** which entries are worth crawling. Present them to the user (in the user's language) as a numbered list. For each item state: what it is (e.g. "뉴스 기사 목록, 20건"), the extractable fields (title / link / image / price / date), and the `itemSelector` to use.
 3. Note that the red badges (`e1, e2, …`) on the page correspond to these proposed targets so the user can cross-check visually (with `--full`, also show the screenshot path).
 4. When the user picks an item, use its `itemSelector` to write the follow-up `eval` / crawling code (still going through the ① DOM verification → ② write → ③ run-test gates below).
 
-Prefer `analyze` over `--visualize` when the user's intent is "what can I extract/crawl here"; use `--visualize` when they only want to see/label elements.
+Default for every "show/analyze/crawl" request is `--visualize` (instant boxes); `analyze` is the exception, reserved for explicit structured-output requests.
 
 ## Dev rules (ONLY for "code deliverable" requests — standalone scripts)
 

@@ -7,20 +7,77 @@
  * to playwright-cli per command.
  */
 
-import { chromium } from 'playwright-core';
+import http from 'node:http';
 import type { Browser, Page } from 'playwright-core';
+
+/**
+ * Minimal GET against Chrome's local CDP HTTP endpoints (/json/list,
+ * /json/activate/…). The port is fixed and local, so this answers in ~10ms —
+ * no playwright involved. Rejects on network error/timeout/bad status.
+ */
+const cdpHttpGet = (port: number, urlPath: string): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const req = http.get(
+      { host: '127.0.0.1', port, path: urlPath, timeout: 1000 },
+      (res) => {
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        res.on('end', () => {
+          const body = Buffer.concat(chunks).toString('utf-8');
+          return res.statusCode === 200
+            ? resolve(body)
+            : reject(new Error(`CDP ${urlPath} → HTTP ${res.statusCode}: ${body}`));
+        });
+      },
+    );
+    req.on('error', reject);
+    req.on('timeout', () => {
+      req.destroy(new Error(`CDP ${urlPath} timeout`));
+    });
+  });
+
+interface CdpTarget {
+  id: string;
+  type?: string;
+  url?: string;
+  title?: string;
+}
+
+/**
+ * Content-page targets straight from /json/list (most-recently-used first).
+ * Pure HTTP — the fast path for "which site / which tabs are open".
+ */
+const listContentTargets = async (port: number): Promise<CdpTarget[]> => {
+  const body = await cdpHttpGet(port, '/json/list');
+  const targets = JSON.parse(body) as CdpTarget[];
+  return targets.filter(
+    (t) => t.type === 'page' && isContentUrl(t.url ?? ''),
+  );
+};
+
+/**
+ * A real content URL (excludes about:blank, chrome:// and devtools pages).
+ */
+const isContentUrl = (url: string): boolean =>
+  !url.startsWith('about:') &&
+  !url.startsWith('chrome') &&
+  !url.startsWith('devtools');
 
 /**
  * A real content tab (excludes about:blank, chrome:// and devtools pages).
  */
-const isContentPage = (page: Page): boolean => {
-  const url = page.url();
-  return (
-    !url.startsWith('about:') &&
-    !url.startsWith('chrome') &&
-    !url.startsWith('devtools')
-  );
-};
+const isContentPage = (page: Page): boolean => isContentUrl(page.url());
+
+/**
+ * URL of the most-recently-activated content tab — Chrome orders /json/list
+ * targets most-recently-used first. Used as the active-tab signal when
+ * focus/visibility can't decide (e.g. the window is minimized, so every tab
+ * reports hidden). Best-effort: undefined on failure.
+ */
+const fetchMruContentUrl = (port: number): Promise<string | undefined> =>
+  listContentTargets(port)
+    .then((targets) => targets[0]?.url)
+    .catch(() => undefined);
 
 /**
  * All content pages across every context, in stable order.
@@ -45,11 +102,23 @@ const readTabState = (page: Page): Promise<TabState> =>
     .catch(() => ({ visible: false, focused: false }));
 
 /**
- * Pick the user's active tab: prefer the focused page, then a visible one,
- * then fall back to the first content page.
+ * Pick the user's active tab. PRIMARY signal: Chrome's /json/list MRU order —
+ * the first content target is the tab the user activated last. This is the
+ * only reliable signal: per-page focus/visibility lies (every window's front
+ * tab reports visible+focused, and a minimized window reports all hidden),
+ * which used to make commands grab the original start tab (google.com)
+ * instead of the tab the user was actually working in. Focus/visibility and
+ * first-page are kept only as fallbacks when the HTTP lookup fails.
  */
-const pickActivePage = async (browser: Browser): Promise<Page | undefined> => {
+const pickActivePage = async (
+  browser: Browser,
+  port: number,
+): Promise<Page | undefined> => {
   const pages = contentPages(browser);
+  const mruUrl = await fetchMruContentUrl(port);
+  const mruPage = pages.find((page) => page.url() === mruUrl);
+  if (mruPage) return mruPage;
+
   const states = await Promise.all(pages.map(readTabState));
   return (
     pages.find((_, index) => states[index]?.focused) ??
@@ -62,11 +131,15 @@ const pickActivePage = async (browser: Browser): Promise<Page | undefined> => {
  * Side effect: connect over CDP, run `fn` against the browser, then
  * disconnect. Disconnecting never closes the user's browser — CDP
  * connections detach without terminating Chrome.
+ *
+ * playwright-core is imported LAZILY here (~200ms load) so commands that can
+ * answer over plain CDP HTTP (tabs / tab / current-site checks) never pay it.
  */
 const withBrowser = async <T>(
   port: number,
   fn: (browser: Browser) => Promise<T>,
 ): Promise<T> => {
+  const { chromium } = await import('playwright-core');
   const browser = await chromium.connectOverCDP(`http://127.0.0.1:${port}`);
   try {
     return await fn(browser);
@@ -83,7 +156,7 @@ export const withActivePage = <T>(
   fn: (page: Page) => Promise<T>,
 ): Promise<T> =>
   withBrowser(port, async (browser) => {
-    const page = await pickActivePage(browser);
+    const page = await pickActivePage(browser, port);
     if (!page) {
       throw new Error(
         'No open page found. Open a page in the browser first.',
@@ -190,32 +263,35 @@ export interface TabInfo {
 
 /**
  * List every content tab with its 1-based index and active flag.
+ *
+ * Pure CDP HTTP (/json/list) — ~10ms on the fixed local port, no playwright
+ * load. Chrome returns targets most-recently-used first, so index 1 is the
+ * tab the user last worked in (that's also the `active` one).
  */
-export const listTabs = (port: number): Promise<TabInfo[]> =>
-  withBrowser(port, async (browser) => {
-    const pages = contentPages(browser);
-    const active = await pickActivePage(browser);
-    return Promise.all(
-      pages.map(async (page, index) => ({
-        index: index + 1,
-        url: page.url(),
-        title: await page.title().catch(() => ''),
-        active: page === active,
-      })),
-    );
-  });
+export const listTabs = async (port: number): Promise<TabInfo[]> => {
+  const targets = await listContentTargets(port);
+  return targets.map((t, index) => ({
+    index: index + 1,
+    url: t.url ?? '',
+    title: t.title ?? '',
+    active: index === 0,
+  }));
+};
 
 /**
- * Bring the tab at the given 1-based index to the front so subsequent
- * commands target it. Returns its URL.
+ * Bring the tab at the given 1-based index (per `listTabs` order) to the
+ * front so subsequent commands target it. Pure CDP HTTP (/json/activate).
+ * Returns its URL.
  */
-export const activateTab = (port: number, index: number): Promise<string> =>
-  withBrowser(port, async (browser) => {
-    const pages = contentPages(browser);
-    const target = pages[index - 1];
-    if (!target) {
-      throw new Error(`Tab ${index} not found (open tabs: ${pages.length})`);
-    }
-    await target.bringToFront();
-    return target.url();
-  });
+export const activateTab = async (
+  port: number,
+  index: number,
+): Promise<string> => {
+  const targets = await listContentTargets(port);
+  const target = targets[index - 1];
+  if (!target) {
+    throw new Error(`Tab ${index} not found (open tabs: ${targets.length})`);
+  }
+  await cdpHttpGet(port, `/json/activate/${target.id}`);
+  return target.url ?? '';
+};
