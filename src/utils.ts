@@ -144,6 +144,35 @@ export const findAvailablePort = async (
 };
 
 /**
+ * Find the pid that LISTENS on a local TCP port. Fast, platform-native:
+ * netstat on Windows (cmd builtin — no PowerShell startup cost), lsof on
+ * macOS/Linux. Used to focus the window of a CDP-probed browser without the
+ * slow process-table scan. Best-effort — undefined on any failure.
+ */
+export const getPidForPort = async (
+  port: number,
+): Promise<number | undefined> => {
+  try {
+    if (getOsType() === 'windows') {
+      const output = await execCommand(
+        `netstat -ano -p tcp | findstr LISTENING | findstr :${port}`,
+      );
+      return output
+        .split('\n')
+        .map((line) => line.trim().split(/\s+/))
+        .filter((cols) => (cols[1] ?? '').endsWith(`:${port}`))
+        .map((cols) => Number.parseInt(cols[cols.length - 1] ?? '', 10))
+        .find((pid) => Number.isFinite(pid) && pid > 0);
+    }
+    const output = await execCommand(`lsof -ti tcp:${port} -sTCP:LISTEN`);
+    const pid = Number.parseInt(output.split('\n')[0] ?? '', 10);
+    return Number.isFinite(pid) && pid > 0 ? pid : undefined;
+  } catch {
+    return undefined;
+  }
+};
+
+/**
  * Probe a local port for a live CDP endpoint (`/json/version` responds).
  * Resolves true only when a Chrome DevTools Protocol server answers there.
  */

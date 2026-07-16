@@ -42,6 +42,13 @@ export declare const checkPortAvailable: (port: number) => Promise<boolean>;
  */
 export declare const findAvailablePort: (startPort?: number) => Promise<number>;
 /**
+ * Find the pid that LISTENS on a local TCP port. Fast, platform-native:
+ * netstat on Windows (cmd builtin — no PowerShell startup cost), lsof on
+ * macOS/Linux. Used to focus the window of a CDP-probed browser without the
+ * slow process-table scan. Best-effort — undefined on any failure.
+ */
+export declare const getPidForPort: (port: number) => Promise<number | undefined>;
+/**
  * Probe a local port for a live CDP endpoint (`/json/version` responds).
  * Resolves true only when a Chrome DevTools Protocol server answers there.
  */

@@ -13,6 +13,7 @@ import {
   findAvailablePort,
   checkPortAvailable,
   findRunningCdpPort,
+  getPidForPort,
 } from './utils.js';
 import { detectChrome, ensureProfile } from './detector.js';
 import {
@@ -149,13 +150,18 @@ const reuseExistingBrowser = async (
   profilePath: string,
   pid?: number,
 ): Promise<void> => {
-  // Window focusing (osascript/powershell) and tab listing (CDP) are
-  // independent — run them concurrently to shave startup latency.
-  const frontPromise = bringWindowToFront(pid);
+  // Focus the window without blocking: resolve the owning pid via the fast
+  // port→pid lookup (netstat/lsof) when the probe path didn't supply one,
+  // then fire the detached focus command. Runs concurrently with tab listing.
+  const focusPromise = (
+    pid !== undefined
+      ? Promise.resolve<number | undefined>(pid)
+      : getPidForPort(port)
+  ).then((resolvedPid) => bringWindowToFront(resolvedPid));
   log('✅ Reused the existing browser — no new tab was opened', 'success');
   log('📋 Currently open tabs:', 'info');
   await printOpenTabs(port);
-  await frontPromise;
+  await focusPromise;
   log('🔄 Brought Chrome window to front', 'success');
   log(
     '💬 AI: report these tabs to the user and ask which tab (n) to work on and what to do',
@@ -180,22 +186,24 @@ const main = async (): Promise<void> => {
 
   const profilePath = getProfilePath();
 
-  // 1. 기존 브라우저 감지: 프로세스 매칭(ps/CIM)과 CDP 포트 프로브를 병렬
-  //    실행 — 어느 쪽이든 찾으면 즉시 재사용. NEVER launch when one exists
-  //    (top invariant: a running browser must never gain an extra tab).
-  const [existing, probedPort] = await Promise.all([
-    detectExistingBrowser(profilePath),
-    findRunningCdpPort(9227),
-  ]);
-  const runningPort =
-    existing.found && existing.port !== undefined ? existing.port : probedPort;
-  if (runningPort !== undefined) {
+  // 1. CDP 포트 프로브 먼저 (전 포트 병렬, ≤300ms 보장) — 켜진 브라우저를
+  //    찾는 가장 빠른 경로. 여기서 찾으면 느린 프로세스 스캔(macOS ps는
+  //    빠르지만 Windows CIM/PowerShell은 1~2.5초)을 아예 건너뛴다.
+  const probedPort = await findRunningCdpPort(9227);
+  if (probedPort !== undefined) {
     log('✅ Existing browser detected', 'success');
-    await reuseExistingBrowser(
-      runningPort,
-      profilePath,
-      existing.found ? existing.pid : undefined,
-    );
+    await reuseExistingBrowser(probedPort, profilePath);
+    await updatePromise;
+    return;
+  }
+
+  // 1b. Fallback: CDP 포트가 프로브 범위(9227~9237) 밖에 있을 수 있으니
+  //     프로세스 매칭으로 한 번 더 확인. NEVER launch when one exists
+  //     (top invariant: a running browser must never gain an extra tab).
+  const existing = await detectExistingBrowser(profilePath);
+  if (existing.found && existing.port !== undefined) {
+    log('✅ Existing browser detected (process scan)', 'success');
+    await reuseExistingBrowser(existing.port, profilePath, existing.pid);
     await updatePromise;
     return;
   }
@@ -278,14 +286,15 @@ const isReuseOnly = (): boolean =>
 const resolveRunningPort = async (): Promise<number | undefined> => {
   const profilePath = getProfilePath();
 
-  // Process detection (ps/CIM) and the CDP port probe are independent —
-  // run them in parallel; either one finding the browser means reuse.
-  const [existing, probed] = await Promise.all([
-    detectExistingBrowser(profilePath),
-    findRunningCdpPort(9227),
-  ]);
-  if (existing.found && existing.port !== undefined) return existing.port;
+  // CDP port probe first (parallel across ports, ≤300ms) — the fastest way
+  // to find a live browser; skips the slow process scan (Windows PowerShell
+  // CIM takes 1–2.5s). Process matching remains as a fallback for a CDP port
+  // outside the probe range.
+  const probed = await findRunningCdpPort(9227);
   if (probed !== undefined) return probed;
+
+  const existing = await detectExistingBrowser(profilePath);
+  if (existing.found && existing.port !== undefined) return existing.port;
 
   if (isReuseOnly()) {
     log(

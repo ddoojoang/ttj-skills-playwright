@@ -117,35 +117,55 @@ export const detectExistingBrowser = async (
 };
 
 /**
- * Bring the running Chrome window to the foreground, per platform.
- * `pid` is optional: the browser may have been found by a CDP port probe (no
- * pid). macOS activates by app name, so it works without a pid; Windows/Linux
- * need a pid, so without one we skip silently. Best-effort — the browser is
- * already alive, so any failure is ignored.
+ * Fire a platform command fully detached (no stdio, unref'd, hidden console
+ * on Windows) so it can never delay CLI exit. Best-effort by construction.
  */
-export const bringWindowToFront = async (pid?: number): Promise<void> => {
-  const osType = getOsType();
+const spawnDetached = (cmd: string, args: string[]): void => {
   try {
-    if (osType === 'macos') {
-      await execCommand(
-        'osascript -e \'tell application "Google Chrome" to activate\'',
-      );
-      return;
-    }
-    // Windows / Linux focusing is pid-based; without a pid, skip quietly.
-    if (pid === undefined) return;
-    if (osType === 'windows') {
-      await execCommand(
-        `powershell -NoProfile -Command "$p = Get-Process -Id ${pid} -ErrorAction SilentlyContinue; if ($p -and $p.MainWindowHandle -ne 0) { Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class TtjWin { [DllImport(\\"user32.dll\\")] public static extern bool SetForegroundWindow(IntPtr h); [DllImport(\\"user32.dll\\")] public static extern bool ShowWindow(IntPtr h, int c); }'; [TtjWin]::ShowWindow($p.MainWindowHandle, 9) | Out-Null; [TtjWin]::SetForegroundWindow($p.MainWindowHandle) | Out-Null }"`,
-      );
-      return;
-    }
-    await execCommand(
-      `wmctrl -i -a $(xdotool search --pid ${pid} | head -1)`,
-    );
+    const child = spawn(cmd, args, {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+    });
+    child.once('error', () => {
+      // Missing binary (e.g. wmctrl on Linux) — focusing is best-effort.
+    });
+    child.unref();
   } catch {
-    // Window focusing failure is ignored; the browser is already running.
+    // Best-effort — the browser is already running.
   }
+};
+
+/**
+ * Bring the running Chrome window to the foreground, per platform.
+ * NON-BLOCKING: the focus command runs detached in the background so browser
+ * detection/reuse never waits on osascript/PowerShell startup (~0.3–1.5s).
+ * `pid` is optional: macOS activates by app name (no pid needed);
+ * Windows/Linux need a pid, so without one we skip silently.
+ */
+export const bringWindowToFront = (pid?: number): void => {
+  const osType = getOsType();
+  if (osType === 'macos') {
+    spawnDetached('osascript', [
+      '-e',
+      'tell application "Google Chrome" to activate',
+    ]);
+    return;
+  }
+  // Windows / Linux focusing is pid-based; without a pid, skip quietly.
+  if (pid === undefined) return;
+  if (osType === 'windows') {
+    spawnDetached('powershell', [
+      '-NoProfile',
+      '-Command',
+      `$p = Get-Process -Id ${pid} -ErrorAction SilentlyContinue; if ($p -and $p.MainWindowHandle -ne 0) { Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public class TtjWin { [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr h); [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int c); }'; [TtjWin]::ShowWindow($p.MainWindowHandle, 9) | Out-Null; [TtjWin]::SetForegroundWindow($p.MainWindowHandle) | Out-Null }`,
+    ]);
+    return;
+  }
+  spawnDetached('sh', [
+    '-c',
+    `wmctrl -i -a $(xdotool search --pid ${pid} | head -1)`,
+  ]);
 };
 
 /**
@@ -252,7 +272,12 @@ export const autoUpdateIfNeeded = async (): Promise<void> => {
       const child = spawn(
         npmCmd,
         ['install', '-g', 'ttj-skills-playwright@latest'],
-        { detached: true, stdio: 'ignore', shell: getOsType() === 'windows' },
+        {
+          detached: true,
+          stdio: 'ignore',
+          windowsHide: true,
+          shell: getOsType() === 'windows',
+        },
       );
       child.unref();
       log(

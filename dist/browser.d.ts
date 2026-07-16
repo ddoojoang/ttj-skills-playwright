@@ -10,12 +10,12 @@ import type { BrowserConfig, VersionInfo, ExistingBrowser } from './types.js';
 export declare const detectExistingBrowser: (expectedProfilePath: string) => Promise<ExistingBrowser>;
 /**
  * Bring the running Chrome window to the foreground, per platform.
- * `pid` is optional: the browser may have been found by a CDP port probe (no
- * pid). macOS activates by app name, so it works without a pid; Windows/Linux
- * need a pid, so without one we skip silently. Best-effort — the browser is
- * already alive, so any failure is ignored.
+ * NON-BLOCKING: the focus command runs detached in the background so browser
+ * detection/reuse never waits on osascript/PowerShell startup (~0.3–1.5s).
+ * `pid` is optional: macOS activates by app name (no pid needed);
+ * Windows/Linux need a pid, so without one we skip silently.
  */
-export declare const bringWindowToFront: (pid?: number) => Promise<void>;
+export declare const bringWindowToFront: (pid?: number) => void;
 /**
  * Launch Chrome directly as a detached child process.
  * Chrome natively supports --remote-debugging-port, so we skip playwright-cli.
