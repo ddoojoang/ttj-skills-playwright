@@ -145,6 +145,9 @@ const buildLaunchArgs = (config) => [
     `--user-data-dir=${config.profilePath}`,
     '--no-first-run',
     '--no-default-browser-check',
+    // Maximized window; CDP attaches without viewport emulation, so the
+    // viewport always fills the window (no 800×600-style shrunken viewport).
+    '--start-maximized',
     START_URL,
 ];
 /**

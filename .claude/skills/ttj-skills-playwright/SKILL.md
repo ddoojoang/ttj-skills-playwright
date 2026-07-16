@@ -193,6 +193,21 @@ Prefer `analyze` over `--visualize` when the user's intent is "what can I extrac
 const browser = await puppeteer.launch({ headless: false });   // true only if explicitly requested
 ```
 
+**Window + viewport MUST fill the screen (required, every launch)** — Puppeteer's default viewport is a shrunken 800×600 box inside the window; always disable it and maximize the window so the viewport equals the full window:
+```javascript
+// Puppeteer
+const browser = await puppeteer.launch({
+  headless: false,
+  defaultViewport: null,            // viewport = actual window size (never omit)
+  args: ['--start-maximized'],      // window fills the screen
+});
+
+// Playwright (when the user chose it)
+const browser = await chromium.launch({ headless: false, args: ['--start-maximized'] });
+const context = await browser.newContext({ viewport: null });  // no viewport emulation
+```
+🚫 Never ship launch code without `defaultViewport: null` (Puppeteer) / `viewport: null` (Playwright) + `--start-maximized`.
+
 **Structure code by feature = one function, one job** — split login / list-fetch / detail-parse / save into separate functions, composed by a flow function (no giant single script):
 ```javascript
 const fetchListPage = (page) => { ... };      // fetch list only
