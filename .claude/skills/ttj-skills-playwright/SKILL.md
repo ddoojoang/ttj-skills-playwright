@@ -44,7 +44,7 @@ When you see that reuse output:
 
 1. **Do NOT** run `goto` / open a new tab / launch anything on your own initiative.
 2. **Report the tab situation in the user's language** — how many tabs are open and what each one is, e.g. "이전에 쓰시던 브라우저가 열려 있어서 앞으로 가져왔어요. 탭이 2개 열려 있습니다: [1] Hacker News, [2] 네이버 로그인".
-3. **Ask the user which tab (by number) they want to work on and what they want to do** — e.g. "몇 번 탭에서 어떤 작업을 할까요?". Then switch with `ttj-skills-playwright tab <n>` and proceed on that tab only.
+3. **1 tab** → don't ask; continue the user's request on that tab right away. **2+ tabs** → ask which tab (by number) to work on — e.g. "몇 번 탭에서 어떤 작업을 할까요?", then switch with `ttj-skills-playwright tab <n>` and proceed on that tab only.
 
 ## 🚨 Preserve the existing browser and tabs
 
@@ -77,9 +77,9 @@ Every command auto-detects the running browser (process detection + CDP port pro
 
 The browser opens on google.com, but the user navigates away — never assume the active page. **Before any page action (visualize / analyze / eval / click / type / screenshot), run `ttj-skills-playwright tabs` first** (instant — plain HTTP, ~0.1s; `▶` marks the active tab = the user's most recent tab):
 
-- **1 tab open** → confirm it in your reply ("현재 ○○ 페이지가 열려 있어서 여기서 진행합니다") and proceed on it.
+- **1 tab open** → do NOT ask anything. Proceed on that tab immediately (chain it: `ttj-skills-playwright tabs && ttj-skills-playwright --visualize`), just mentioning the site in your reply ("○○ 페이지에서 진행했습니다").
 - **2+ tabs open** → list every tab to the user (`[1] title — url` …) and **ask which tab number to work on**. After the answer, `ttj-skills-playwright tab <n>`, then proceed.
-- Only skip the question when the user already named the tab/site in their request (e.g. "네이버 탭에서 요소 보여줘") — then switch to the matching tab yourself and say so.
+- Only skip the 2+ tabs question when the user already named the tab/site in their request (e.g. "네이버 탭에서 요소 보여줘") — then switch to the matching tab yourself and say so.
 
 > 💡 **Prefer click/type over eval**: `eval`'s `el.click()` is an untrusted JS event (isTrusted=false) that login/checkout buttons may ignore. `click`/`type` dispatch real input events via CDP, and `type` applies a per-character 100–300ms random delay (bot-detection etiquette).
 
@@ -179,13 +179,19 @@ Hover a badge to isolate that element — every other box dims and the hovered e
 
 **Overlay rule**: each `--visualize` clears the previous overlay and shows only the new one. Badges/boxes stay on the page, so run `ttj-skills-playwright clear` for a clean screen/screenshot (no reload needed).
 
-## Crawl-target requests → just show the boxes (default)
+## Crawl-target requests → boxes FIRST, deep analysis only after asking
 
-**Trigger**: "크롤링 뭐 할 수 있어", "크롤링할만한거 분석해줘", "크롤링 대상 찾아줘", "페이지 분석" · "what can I crawl", "analyze this page".
+**Trigger**: "크롤링 뭐 할 수 있어", "크롤링할만한거 분석해줘", "크롤링 요소 분석해줘", "크롤링 대상 찾아줘", "페이지 분석" · "what can I crawl", "analyze this page".
 
-**Default behavior: run `ttj-skills-playwright --visualize` — instant red boxes only. Do NOT run a deep structure analysis.** The user looks at the numbered boxes on screen, clicks a badge to copy its selector (or quotes `e7`), and tells you which part to crawl. That conversation IS the analysis — fast and precise.
+**MANDATORY two-phase flow — NEVER run `analyze` as the first response to these requests:**
 
-Use the `analyze` subcommand **only when the user explicitly asks for a structured/JSON breakdown** (e.g. "구조를 JSON으로 뽑아줘", "리스트/테이블 자동으로 찾아줘") — it additionally prints machine-readable page structure to stdout:
+1. **Instantly** run `ttj-skills-playwright --visualize` (red boxes + badges appear in under a second). No deep analysis, no `analyze` subcommand, no long wait.
+2. In the SAME reply, tell the user the boxes are ready and **softly offer** the deep analysis, then STOP and wait — e.g.: "배지와 박스 표시를 준비했습니다 ✅ 배지를 클릭하면 셀렉터가 복사돼요. 원하시면 시간이 조금 걸리더라도 페이지 구조(반복 목록·테이블·폼)를 자세히 분석해드릴까요?"
+3. Run the `analyze` subcommand **only after the user says yes** (or when they explicitly asked for a structured/JSON breakdown up front, e.g. "구조를 JSON으로 뽑아줘", "리스트/테이블 자동으로 찾아줘").
+
+Most of the time the user just clicks a badge, pastes the selector, and says "이 부분 크롤링해줘" — that conversation IS the analysis, so phase 2's question usually never needs a yes.
+
+`analyze` (phase 3 only) additionally prints machine-readable page structure to stdout:
 
 ```jsonc
 {
