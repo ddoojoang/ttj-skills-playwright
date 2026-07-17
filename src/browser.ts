@@ -337,7 +337,7 @@ export const verifyBrowserReady = async (
  * Runs inside `page.evaluate` over a direct CDP connection, so it is authored
  * in browser JavaScript (not project FP TypeScript). It:
  *  1. auto-scrolls to trigger lazy-loaded content,
- *  2. overlays numbered badges (e1, e2, ...) + selector labels on every visible
+ *  2. overlays numbered badges (v1, v2, ...) + selector labels on every visible
  *     div / interactive element,
  *  3. wires click-to-copy of a unique CSS selector to the clipboard.
  */
@@ -356,7 +356,7 @@ const AUTO_SCROLL_JS = `async () => {
 
 /**
  * Browser-context JS (injected as a string) that overlays numbered badges
- * (e1, e2, ...) + hover selector labels + click-to-copy on every visible
+ * (v1, v2, ...) + hover selector labels + click-to-copy on every visible
  * div / interactive element. Ported from the `bb 2` reference visualizer.
  */
 const OVERLAY_JS = `() => {
@@ -556,7 +556,7 @@ const OVERLAY_JS = `() => {
 
     let idx = 1;
 
-    // Single-tier RED marker: badge (e1, e2, ...) pinned to the element's
+    // Single-tier RED marker: badge (v1, v2, ...) pinned to the element's
     // top-left corner + red outline. Hover isolates this element (dims the
     // rest) and shows a translucent red fill so the box is unmistakable.
     //
@@ -566,7 +566,9 @@ const OVERLAY_JS = `() => {
     // boxes/badges render instantly, selectors are computed (and cached) only
     // when the user actually hovers or clicks a badge.
     const mark = (el, rect, frag) => {
-      const ref = 'e' + idx;
+      // 'v' prefix: visual badges (click = copy CSS selector). The 'e' prefix
+      // is reserved for snapshot refs (machine contract: click e5 / fill e5).
+      const ref = 'v' + idx;
 
       const badge = document.createElement('div');
       badge.className = 'pw-ref-badge';
@@ -680,7 +682,7 @@ const OVERLAY_JS = `() => {
 
 /**
  * Visualize every element on the currently open page: connect directly over
- * CDP to the running browser, inject numbered badges (e1, e2, ...) + hover
+ * CDP to the running browser, inject numbered badges (v1, v2, ...) + hover
  * selector labels + click-to-copy into the active tab, then take a
  * screenshot. Best-effort — any failure is logged, never thrown.
  *
@@ -766,7 +768,7 @@ export const visualizePageReferences = async (
     }
 
     log(
-      'Click a badge (e1, e2, e3...) to copy its CSS selector to the clipboard',
+      'Click a badge (v1, v2, v3...) to copy its CSS selector to the clipboard',
       'info',
     );
     log('✅ Visualization complete', 'success');

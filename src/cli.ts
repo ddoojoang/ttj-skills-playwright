@@ -31,13 +31,25 @@ import {
   clickInActivePage,
   typeInActivePage,
   waitInActivePage,
+  fillInActivePage,
+  pressInActivePage,
   listTabs,
   activateTab,
   clearOverlays,
   runBatchInActivePage,
 } from './cdp.js';
-import type { BatchStep } from './cdp.js';
+import type { BatchStep, BatchStepResult } from './types.js';
 import { analyzeActivePage } from './analyzer.js';
+import { hasNativeWebSocket, isWsConnectError } from './cdp-ws.js';
+import {
+  parseActionTarget,
+  clickInActiveTabWs,
+  fillInActiveTabWs,
+  pressInActiveTabWs,
+} from './input-ws.js';
+import { snapshotActiveTab } from './snapshot.js';
+import { runBatchOverWs } from './batch.js';
+import { collectConsole } from './console-ws.js';
 
 /**
  * Read the package version dynamically from package.json (ESM-safe).
@@ -56,9 +68,13 @@ Usage: ttj-skills-playwright [command] [options]
 Commands:
   eval <js>                Run JS in the active tab and print the result
   goto <url>               Navigate the active tab and wait for load
-  click <selector>         Click an element (real/trusted mouse event)
-  type <selector> <text>   Type with human-like random keystroke delays
+  snapshot [--depth N]     ARIA snapshot → file (compact tree + refs e1, e2, …)
+  click <ref|selector>     Click an element (real/trusted mouse event) — accepts e5 or CSS
+  fill <ref|selector> <text>  Set a field instantly (trusted input event, no key delay)
+  press <key>              Press a key on the focused element (Enter, Tab, ArrowDown, …)
+  type <selector> <text>   Type with human-like random keystroke delays (bot-detection etiquette)
   wait <selector> [ms]     Wait for a selector to appear (default 10000ms)
+  console [--watch N]      Print the tab's console messages (buffered replay + N live seconds)
   tabs                     List open tabs with indexes
   tab <n>                  Bring tab n to the front
   clear                    Remove visualization overlays from the page
@@ -82,7 +98,10 @@ Examples:
   $ ttj-skills-playwright --visualize  # Instant element boxes + screenshot
   $ ttj-skills-playwright analyze      # Red boxes + JSON of crawlable structure
   $ ttj-skills-playwright analyze --full  # Slower: auto-scroll whole page first
-  $ ttj-skills-playwright batch '[{"cmd":"click","selector":"#login"},{"cmd":"wait","selector":"#form"},{"cmd":"type","selector":"#id","text":"user"},{"cmd":"eval","code":"location.href"}]'
+  $ ttj-skills-playwright snapshot     # Page → compact ref tree file (read it, then act by ref)
+  $ ttj-skills-playwright fill e5 "user@mail.com"   # Instant fill by snapshot ref
+  $ ttj-skills-playwright press Enter
+  $ ttj-skills-playwright batch '[{"cmd":"goto","url":"https://site.com/login"},{"cmd":"snapshot"},{"cmd":"fill","ref":"e5","text":"user"},{"cmd":"press","key":"Enter"}]'
 `;
 
 /**
@@ -368,17 +387,143 @@ const runGoto = async (url: string | undefined): Promise<void> => {
 };
 
 /**
- * `click <selector>` — click with a real (trusted) mouse event.
+ * Ref actions (e5) are only possible over the WS pipeline (Node 22+): the
+ * playwright path has no backendNodeId access. Returns true when the caller
+ * must abort (error already reported).
+ */
+const rejectRefWithoutWs = (arg: string): boolean => {
+  if (parseActionTarget(arg).kind === 'ref' && !hasNativeWebSocket()) {
+    log(
+      `Ref actions (${arg}) need Node 22+ (native WebSocket). Use a CSS selector or upgrade Node.`,
+      'error',
+    );
+    process.exitCode = 1;
+    return true;
+  }
+  return false;
+};
+
+/**
+ * `click <ref|selector>` — click with a real (trusted) mouse event.
+ * WS fast path (exact MRU tab, hard timeout); playwright fallback for CSS
+ * selectors when the socket is unavailable.
  */
 const runClick = async (selector: string | undefined): Promise<void> => {
   if (!selector) {
-    usageError('Pass a selector to click. e.g. ttj-skills-playwright click "#login-btn"');
+    usageError('Pass a ref or selector to click. e.g. ttj-skills-playwright click e5  |  click "#login-btn"');
     return;
   }
   const port = await resolveRunningPort();
   if (port === undefined) return;
+  if (rejectRefWithoutWs(selector)) return;
+  const target = parseActionTarget(selector);
+  if (hasNativeWebSocket()) {
+    try {
+      await clickInActiveTabWs(port, target);
+      log(`✅ Clicked: ${selector}`, 'success');
+      return;
+    } catch (error) {
+      if (target.kind === 'ref' || !isWsConnectError(error)) throw error;
+      // Socket-level failure on a CSS selector — retry via playwright.
+    }
+  }
   await clickInActivePage(port, selector);
   log(`✅ Clicked: ${selector}`, 'success');
+};
+
+/**
+ * `fill <ref|selector> <text>` — set a field instantly (focus → select-all →
+ * trusted insertText). No per-key delay: the fast default for login forms.
+ */
+const runFill = async (
+  selector: string | undefined,
+  text: string | undefined,
+): Promise<void> => {
+  if (!selector || text === undefined) {
+    usageError('Pass a ref/selector and text. e.g. ttj-skills-playwright fill e5 "user@mail.com"');
+    return;
+  }
+  const port = await resolveRunningPort();
+  if (port === undefined) return;
+  if (rejectRefWithoutWs(selector)) return;
+  const target = parseActionTarget(selector);
+  if (hasNativeWebSocket()) {
+    try {
+      await fillInActiveTabWs(port, target, text);
+      log(`✅ Filled: ${selector} (${[...text].length} chars)`, 'success');
+      return;
+    } catch (error) {
+      if (target.kind === 'ref' || !isWsConnectError(error)) throw error;
+    }
+  }
+  await fillInActivePage(port, selector, text);
+  log(`✅ Filled: ${selector} (${[...text].length} chars)`, 'success');
+};
+
+/**
+ * `press <key>` — press a keyboard key on the focused element.
+ */
+const runPress = async (key: string | undefined): Promise<void> => {
+  if (!key) {
+    usageError('Pass a key to press. e.g. ttj-skills-playwright press Enter');
+    return;
+  }
+  const port = await resolveRunningPort();
+  if (port === undefined) return;
+  if (hasNativeWebSocket()) {
+    try {
+      await pressInActiveTabWs(port, key);
+      log(`✅ Pressed: ${key}`, 'success');
+      return;
+    } catch (error) {
+      if (!isWsConnectError(error)) throw error;
+    }
+  }
+  await pressInActivePage(port, key);
+  log(`✅ Pressed: ${key}`, 'success');
+};
+
+/**
+ * `snapshot [--depth N]` — ARIA accessibility snapshot of the active tab.
+ * The tree goes to a file; stdout carries only URL/title/path/counts (the AI
+ * reads the file selectively — that's the token-efficiency contract).
+ */
+const runSnapshot = async (): Promise<void> => {
+  const port = await resolveRunningPort();
+  if (port === undefined) return;
+  const summary = await snapshotActiveTab(port);
+  if (summary.refless) {
+    log(
+      'Node <22 fallback: snapshot saved WITHOUT refs — ref actions (click e5) unavailable. Use CSS selectors.',
+      'warning',
+    );
+  }
+  if (summary.unexpandedIframes > 0) {
+    log(
+      `${summary.unexpandedIframes} cross-origin iframe(s) not expanded (refs point at the <iframe> element)`,
+      'warning',
+    );
+  }
+  console.log(`URL: ${summary.url}`);
+  console.log(`Title: ${summary.title}`);
+  console.log(
+    `Snapshot: ${summary.filePath} (${summary.lineCount} lines, ${summary.refCount} refs)`,
+  );
+};
+
+/**
+ * `console [--watch N]` — print the tab's console messages (buffered replay,
+ * plus N seconds of live collection when --watch is passed).
+ */
+const runConsole = async (args: readonly string[]): Promise<void> => {
+  const watchIndex = args.indexOf('--watch');
+  const watchSeconds =
+    watchIndex >= 0 ? Math.max(0, Number(args[watchIndex + 1]) || 0) : 0;
+  const port = await resolveRunningPort();
+  if (port === undefined) return;
+  const lines = await collectConsole(port, watchSeconds);
+  console.log(lines.join('\n') || '(no console messages)');
+  log(`✅ Collected ${lines.length} console message(s)`, 'success');
 };
 
 /**
@@ -494,6 +639,28 @@ const parseBatchSteps = (json: string): BatchStep[] | undefined => {
 };
 
 /**
+ * Route a batch to the right runner. WS runner (one per-tab socket, refs,
+ * hard timeouts) whenever possible; playwright runner for `type` steps
+ * (per-key human delay with real key events) and Node <22, with the usual
+ * socket-failure fallback.
+ */
+const runBatchSmart = async (
+  port: number,
+  steps: readonly BatchStep[],
+): Promise<BatchStepResult[]> => {
+  const needsPlaywright =
+    !hasNativeWebSocket() || steps.some((step) => step.cmd === 'type');
+  if (!needsPlaywright) {
+    try {
+      return await runBatchOverWs(port, steps);
+    } catch (error) {
+      if (!isWsConnectError(error)) throw error;
+    }
+  }
+  return runBatchInActivePage(port, steps);
+};
+
+/**
  * `batch '<json-steps>'` — run several actions in ONE process + ONE CDP
  * connection. stdout is the JSON results array only (the AI parses it);
  * human notes go through log().
@@ -502,7 +669,7 @@ const runBatch = async (json?: string): Promise<void> => {
   const steps = json === undefined ? undefined : parseBatchSteps(json);
   if (!steps) {
     log(
-      'Usage: ttj-skills-playwright batch \'[{"cmd":"click","selector":"#btn"},{"cmd":"eval","code":"location.href"}]\' — non-empty JSON array required (cmds: goto|click|type|wait|eval|screenshot)',
+      'Usage: ttj-skills-playwright batch \'[{"cmd":"click","selector":"#btn"},{"cmd":"eval","code":"location.href"}]\' — non-empty JSON array required (cmds: goto|click|type|wait|eval|screenshot|fill|press|snapshot)',
       'error',
     );
     process.exitCode = 1;
@@ -510,7 +677,7 @@ const runBatch = async (json?: string): Promise<void> => {
   }
   const port = await resolveRunningPort();
   if (port === undefined) return;
-  const results = await runBatchInActivePage(port, steps);
+  const results = await runBatchSmart(port, steps);
   console.log(JSON.stringify(results, null, 2));
   if (results.some((r) => !r.ok)) {
     process.exitCode = 1;
@@ -541,6 +708,10 @@ const SUBCOMMANDS: Record<string, (() => Promise<void>) | undefined> = {
   eval: () => runEval(commandArgs[0]),
   goto: () => runGoto(commandArgs[0]),
   click: () => runClick(commandArgs[0]),
+  fill: () => runFill(commandArgs[0], commandArgs[1]),
+  press: () => runPress(commandArgs[0]),
+  snapshot: () => runSnapshot(),
+  console: () => runConsole(commandArgs),
   type: () => runType(commandArgs[0], commandArgs[1]),
   wait: () => runWait(commandArgs[0], commandArgs[1]),
   tabs: () => runTabs(),

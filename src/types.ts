@@ -106,3 +106,39 @@ export interface PageAnalysis {
   tables: TableInfo[];
   forms: FormInfo[];
 }
+
+/**
+ * One step of a `batch` run. `cmd` picks the action; the other fields are
+ * that action's arguments (validated at execution time). `selector` on
+ * click/fill also accepts a snapshot ref token (e5) — or pass `ref`
+ * explicitly.
+ */
+export interface BatchStep {
+  readonly cmd:
+    | 'goto'
+    | 'click'
+    | 'type'
+    | 'wait'
+    | 'eval'
+    | 'screenshot'
+    | 'fill'
+    | 'press'
+    | 'snapshot';
+  readonly url?: string;
+  readonly selector?: string;
+  readonly ref?: string;
+  readonly text?: string;
+  readonly code?: string;
+  readonly path?: string;
+  readonly key?: string;
+  readonly timeout?: number;
+  readonly full?: boolean;
+}
+
+export interface BatchStepResult {
+  readonly step: number;
+  readonly cmd: string;
+  readonly ok: boolean;
+  readonly result?: unknown;
+  readonly error?: string;
+}

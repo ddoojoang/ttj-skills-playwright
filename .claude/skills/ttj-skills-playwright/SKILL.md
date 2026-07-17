@@ -1,6 +1,6 @@
 ---
 name: ttj-skills-playwright
-description: Drive an existing Chrome over CDP (Playwright core) with one-shot commands — eval / goto / click / type / wait / tabs / screenshot — plus page element visualization (--visualize) and structure analysis (analyze → red boxes + crawl-target JSON). After opening the browser with this skill, ALL browser actions must go through this skill's commands. Reply in the user's language (any language).
+description: Drive an existing Chrome over CDP (Playwright core) with one-shot commands — snapshot (ARIA tree + refs) / eval / goto / click / fill / press / type / wait / tabs / console / screenshot — plus page element visualization (--visualize) and structure analysis (analyze → red boxes + crawl-target JSON). After opening the browser with this skill, ALL browser actions must go through this skill's commands. Reply in the user's language (any language).
 disable-model-invocation: false
 allowed-tools: Bash, Read, Write
 auto-invoke-keywords: [
@@ -49,7 +49,7 @@ When you see that reuse output:
 ## 🚨 Preserve the existing browser and tabs
 
 - Treat the user's currently open browser windows and tabs as state that must be preserved.
-- A subcommand (`tab`, `tabs`, `eval`, `click`, `type`, `goto`, `wait`, `--visualize`, `clear`, `screenshot`) means "operate on the existing skill browser." It does NOT authorize launching another browser or creating a new start tab.
+- A subcommand (`tab`, `tabs`, `snapshot`, `eval`, `click`, `fill`, `press`, `type`, `goto`, `wait`, `console`, `--visualize`, `clear`, `screenshot`) means "operate on the existing skill browser." It does NOT authorize launching another browser or creating a new start tab.
 - **Never run bare `ttj-skills-playwright` as a recovery step** when the user asked for a subcommand — the bare command may open an extra window / start tab.
 - For a tab switch, run only `ttj-skills-playwright tab <n>`. If it seems to fail, do NOT relaunch; the commands now probe the CDP port and reuse the running browser automatically. Check `ttj-skills-playwright tabs` — the tab count must not increase.
 - Use `--no-launch` (alias `--reuse-only`) when you must guarantee no new browser is opened: e.g. `ttj-skills-playwright tab 2 --no-launch`. It errors instead of launching if nothing is running.
@@ -59,11 +59,15 @@ When you see that reuse output:
 
 | Goal | Command (instant, ~0.1s) |
 |---|---|
+| Map the page (ARIA tree + refs → file) | `ttj-skills-playwright snapshot` |
 | Run JS / read DOM / change styles | `ttj-skills-playwright eval "<js>"` |
 | Navigate (waits for load) | `ttj-skills-playwright goto <url>` |
-| Click (real trusted mouse event) | `ttj-skills-playwright click "<selector>"` |
+| Click (real trusted mouse event) | `ttj-skills-playwright click e5` or `click "<selector>"` |
+| Fill a field instantly (login forms) | `ttj-skills-playwright fill e5 "<text>"` or `fill "<selector>" "<text>"` |
+| Press a key (Enter, Tab, ArrowDown, …) | `ttj-skills-playwright press Enter` |
 | Type (human-like random delay) | `ttj-skills-playwright type "<selector>" "<text>"` |
 | Wait for an element (SPA / lazy) | `ttj-skills-playwright wait "<selector>" [timeoutMs]` |
+| Read console messages | `ttj-skills-playwright console [--watch <sec>]` |
 | List / switch tabs | `ttj-skills-playwright tabs` / `ttj-skills-playwright tab <n>` |
 | Multi-step sequence (1 connection) | `ttj-skills-playwright batch '<json-steps>'` |
 | Screenshot | `ttj-skills-playwright screenshot [path] [--full]` |
@@ -81,22 +85,38 @@ The browser opens on google.com, but the user navigates away — never assume th
 - **2+ tabs open** → list every tab to the user (`[1] title — url` …) and **ask which tab number to work on**. After the answer, `ttj-skills-playwright tab <n>`, then proceed.
 - Only skip the 2+ tabs question when the user already named the tab/site in their request (e.g. "네이버 탭에서 요소 보여줘") — then switch to the matching tab yourself and say so.
 
-> 💡 **Prefer click/type over eval**: `eval`'s `el.click()` is an untrusted JS event (isTrusted=false) that login/checkout buttons may ignore. `click`/`type` dispatch real input events via CDP, and `type` applies a per-character 100–300ms random delay (bot-detection etiquette).
+> 💡 **Prefer click/fill/type over eval**: `eval`'s `el.click()` is an untrusted JS event (isTrusted=false) that login/checkout buttons may ignore. `click`/`fill`/`type` dispatch real input events via CDP.
+
+## 🚨 Snapshot-first workflow (unfamiliar page → act by ref, token-efficient)
+
+When you need to interact with a page whose structure you don't know (login forms, search boxes, buttons):
+
+1. Run `ttj-skills-playwright snapshot` (~0.1s). stdout stays tiny — URL, title, and a **file path**. The page's ARIA tree (`- textbox "Password" [ref=e10]`) is in that file.
+2. **Read the snapshot file** (or grep it for the element you need) — this is far cheaper than screenshots or DOM dumps.
+3. Act directly by ref: `ttj-skills-playwright fill e8 "user@mail.com"`, `click e12`, `press Enter`. No CSS selector guessing.
+4. **Refs die on navigation** — after any `goto`/link click/form submit, run `snapshot` again before using refs. A stale ref fails with a clear "Run 'snapshot' again" error (never a wrong-element click).
+
+**fill vs type — choose deliberately:**
+- `fill` = instant (one trusted `input` event, React/Vue-safe). **Default for login forms and search boxes** — a 20-char login takes ~0.1s instead of ~4s.
+- `type` = per-character 100–300ms random delay with real keydown/keyup events. Use it only when the site does bot detection or listens to individual keystrokes (autocomplete that reacts per key).
+
+**Two ref systems, don't confuse them:** snapshot refs are `e1, e2, …` (machine contract — usable in `click`/`fill`). Visualization badges on screen are `v1, v2, …` (human-facing — the user clicks a badge to copy a CSS selector; `vN` is NOT a command argument).
 
 ## 🚨 Multi-step work = ONE tool call (never one call per action)
 
 Running each action as a separate Bash tool call wastes seconds of round-trip per step. When you already know the next 2+ actions:
 
-1. **Preferred — `batch`**: one process + ONE CDP connection for the whole sequence. Steps run in order; on the first failure the remaining steps are skipped and reported. stdout = JSON results array (parse it; non-zero exit = some step failed):
+1. **Preferred — `batch`**: one process + ONE CDP connection for the whole sequence. Steps run in order; on the first failure the remaining steps are skipped and reported. stdout = JSON results array (parse it; non-zero exit = some step failed). The flagship login flow — navigate, map, fill by ref, submit — in ONE call:
 ```bash
 ttj-skills-playwright batch '[
-  {"cmd":"click","selector":"#login-btn"},
-  {"cmd":"wait","selector":"#login-form","timeout":5000},
-  {"cmd":"type","selector":"#username","text":"myuser"},
-  {"cmd":"eval","code":"location.href"}
+  {"cmd":"goto","url":"https://site.com/login"},
+  {"cmd":"snapshot"},
+  {"cmd":"fill","ref":"e8","text":"myuser"},
+  {"cmd":"fill","ref":"e10","text":"mypass"},
+  {"cmd":"press","key":"Enter"}
 ]'
 ```
-Step fields: `goto{url}` · `click{selector,timeout?}` · `type{selector,text}` · `wait{selector,timeout?}` · `eval{code}` · `screenshot{path,full?}`.
+Step fields: `goto{url}` · `snapshot{}` (refreshes refs mid-batch) · `click{selector|ref,timeout?}` · `fill{selector|ref,text}` · `press{key}` · `type{selector,text}` · `wait{selector,timeout?}` · `eval{code}` · `screenshot{path,full?}`. A `goto` step invalidates refs — put a `snapshot` step after it before any ref step. If the refs aren't known yet, run `snapshot` alone first, read the file, then batch the actions.
 2. **Fallback — `&&` chaining** for mixes batch can't express (e.g. `tab 2 && … --visualize`): `ttj-skills-playwright tab 2 && ttj-skills-playwright eval "document.title"`.
 
 Use single one-shot commands only when the next action genuinely depends on output you must reason about first.
@@ -137,10 +157,26 @@ ttj-skills-playwright goto https://example.com
 ttj-skills-playwright goto example.com        # https:// auto-prefixed
 ```
 
-### click / type — real input events
+### snapshot — ARIA tree + refs to a file (map the page before acting)
 ```bash
-ttj-skills-playwright click "#login-btn"
-ttj-skills-playwright type "#query" "search text"
+ttj-skills-playwright snapshot                # stdout: URL / Title / file path (lines, refs)
+ttj-skills-playwright snapshot --depth 6      # cap tree depth on huge pages
+grep -i "textbox\|button" ~/.ttj-skills-playwright/snapshots/<targetId>.txt
+```
+
+### click / fill / press / type — real input events
+```bash
+ttj-skills-playwright click e12               # by snapshot ref (exact element, no guessing)
+ttj-skills-playwright click "#login-btn"      # or by CSS selector
+ttj-skills-playwright fill e8 "user@mail.com" # instant fill (login default, ~0.1s)
+ttj-skills-playwright press Enter             # submit without hunting for the button
+ttj-skills-playwright type "#query" "search text"   # per-key human delay (bot-detection sites)
+```
+
+### console — page console messages (debugging)
+```bash
+ttj-skills-playwright console                 # buffered recent messages (replay)
+ttj-skills-playwright console --watch 5       # + 5s of live collection
 ```
 
 ### wait — wait for an element to appear
@@ -166,7 +202,7 @@ ttj-skills-playwright clear                           # remove visualization bad
 
 **Trigger**: "show me the elements", "visualize the page", "show the HTML structure", "analyze the elements", "요소 보여줘", "요소 분석해줘", "HTML 구조 보여줘", "페이지 시각화해줘", "要素を見せて".
 
-`--visualize` overlays a red numbered badge (`e1, e2, …`) **pinned exactly to each element's top-left corner** + a red outline on every visible content element (divs, links, buttons, inputs, cards). Empty layout wrappers and off-screen/clipped carousel items are excluded, so badges mark only real visible content.
+`--visualize` overlays a red numbered badge (`v1, v2, …`) **pinned exactly to each element's top-left corner** + a red outline on every visible content element (divs, links, buttons, inputs, cards). Empty layout wrappers and off-screen/clipped carousel items are excluded, so badges mark only real visible content.
 
 **INSTANT by default** — boxes appear immediately on what is currently rendered: no auto-scroll, no screenshot, selectors computed lazily on hover/click. This is the mode to use when the user says "요소 보여줘 / show elements": the user looks at the browser, clicks a badge to copy its selector, and asks you to crawl just that part. Add `--full` only when the user explicitly wants the whole page (auto-scrolls to trigger lazy-load, then saves a full-page screenshot — path printed in the "📸 Screenshot saved:" log line).
 
@@ -175,7 +211,7 @@ Hover a badge to isolate that element — every other box dims and the hovered e
 **AI procedure:**
 1. Run `ttj-skills-playwright --visualize` (instant; add `--full` only if the user asks for the whole page / a screenshot)
 2. Tell the user the boxes are on screen: hover a badge to inspect, click it to copy the selector
-3. The user pastes a ref (`e7`) or a copied selector and asks you to act on / crawl that part — do exactly that scope, nothing more.
+3. The user pastes a badge number (`v7`) or a copied selector and asks you to act on / crawl that part — do exactly that scope, nothing more. (A `v7` from the user is a visual badge, not a command ref — use the copied CSS selector, or run `snapshot` and act by `eN` ref.)
 
 **Overlay rule**: each `--visualize` clears the previous overlay and shows only the new one. Badges/boxes stay on the page, so run `ttj-skills-playwright clear` for a clean screen/screenshot (no reload needed).
 
@@ -212,7 +248,7 @@ Most of the time the user just clicks a badge, pastes the selector, and says "�
 **AI procedure (explicit JSON requests only):**
 1. Run `ttj-skills-playwright analyze` (add `--full` only if the user wants below-the-fold/lazy-loaded content too).
 2. Read the JSON from stdout and **judge** which entries are worth crawling. Present them to the user (in the user's language) as a numbered list. For each item state: what it is (e.g. "뉴스 기사 목록, 20건"), the extractable fields (title / link / image / price / date), and the `itemSelector` to use.
-3. Note that the red badges (`e1, e2, …`) on the page correspond to these proposed targets so the user can cross-check visually (with `--full`, also show the screenshot path).
+3. Note that the red badges (`v1, v2, …`) on the page correspond to these proposed targets so the user can cross-check visually (with `--full`, also show the screenshot path).
 4. When the user picks an item, use its `itemSelector` to write the follow-up `eval` / crawling code (still going through the ① DOM verification → ② write → ③ run-test gates below).
 
 Default for every "show/analyze/crawl" request is `--visualize` (instant boxes); `analyze` is the exception, reserved for explicit structured-output requests.

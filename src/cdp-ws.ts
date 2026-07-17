@@ -44,6 +44,8 @@ export const isWsConnectError = (error: unknown): boolean =>
 
 interface CdpMessage {
   id?: number;
+  method?: string;
+  params?: Record<string, unknown>;
   error?: { message?: string };
   result?: {
     exceptionDetails?: {
@@ -58,6 +60,14 @@ export type CdpSend = (
   method: string,
   params?: Record<string, unknown>,
 ) => Promise<Record<string, unknown>>;
+
+/** Subscribe to CDP events (id-less frames) on the same target socket. */
+export interface CdpEvents {
+  readonly on: (
+    method: string,
+    handler: (params: Record<string, unknown>) => void,
+  ) => void;
+}
 
 const openWs = (wsUrl: string): Promise<WsLike> =>
   new Promise((resolve, reject) => {
@@ -81,55 +91,93 @@ const openWs = (wsUrl: string): Promise<WsLike> =>
     };
   });
 
+interface PendingCommand {
+  readonly method: string;
+  readonly resolve: (result: Record<string, unknown>) => void;
+  readonly reject: (error: Error) => void;
+  readonly timer: ReturnType<typeof setTimeout>;
+}
+
 /**
- * Open a WebSocket to one CDP target, hand `fn` a command sender, then close.
- * Every command gets a hard `timeoutMs` so a stuck page can never hold the
- * CLI for minutes — it fails with a readable error instead.
+ * Open a WebSocket to one CDP target, hand `fn` a command sender plus an
+ * event subscriber, then close. Every command gets a hard `timeoutMs` so a
+ * stuck page can never hold the CLI for minutes — it fails with a readable
+ * error instead. One socket listener dispatches both command replies (frames
+ * with an `id`) and protocol events (id-less frames) to their handlers.
  */
 export const withTargetWs = async <T>(
   wsUrl: string,
-  fn: (send: CdpSend) => Promise<T>,
+  fn: (send: CdpSend, events: CdpEvents) => Promise<T>,
   timeoutMs: number = 30_000,
 ): Promise<T> => {
   const ws = await openWs(wsUrl);
   const nextId = { value: 0 };
+  const pending = new Map<number, PendingCommand>();
+  const eventHandlers = new Map<
+    string,
+    ReadonlyArray<(params: Record<string, unknown>) => void>
+  >();
+
+  const onMessage = (event: { data: unknown }): void => {
+    const message = JSON.parse(String(event.data)) as CdpMessage;
+    if (message.id !== undefined) {
+      const command = pending.get(message.id);
+      if (!command) return;
+      pending.delete(message.id);
+      clearTimeout(command.timer);
+      if (message.error) {
+        command.reject(
+          new Error(`CDP ${command.method}: ${message.error.message ?? 'error'}`),
+        );
+        return;
+      }
+      const exception = message.result?.exceptionDetails;
+      if (exception) {
+        command.reject(
+          new Error(
+            exception.exception?.description ??
+              exception.text ??
+              'evaluate threw',
+          ),
+        );
+        return;
+      }
+      command.resolve(message.result ?? {});
+      return;
+    }
+    if (message.method !== undefined) {
+      (eventHandlers.get(message.method) ?? []).forEach((handler) =>
+        handler(message.params ?? {}),
+      );
+    }
+  };
+  ws.addEventListener('message', onMessage);
+
   const send: CdpSend = (method, params = {}) => {
     nextId.value += 1;
     const id = nextId.value;
     return new Promise((resolve, reject) => {
-      const onMessage = (event: { data: unknown }): void => {
-        const message = JSON.parse(String(event.data)) as CdpMessage;
-        if (message.id !== id) return;
-        ws.removeEventListener('message', onMessage);
-        clearTimeout(timer);
-        if (message.error) {
-          reject(new Error(`CDP ${method}: ${message.error.message ?? 'error'}`));
-          return;
-        }
-        const exception = message.result?.exceptionDetails;
-        if (exception) {
-          reject(
-            new Error(
-              exception.exception?.description ??
-                exception.text ??
-                'evaluate threw',
-            ),
-          );
-          return;
-        }
-        resolve(message.result ?? {});
-      };
       const timer = setTimeout(() => {
-        ws.removeEventListener('message', onMessage);
+        pending.delete(id);
         reject(new Error(`CDP ${method} timeout after ${timeoutMs}ms`));
       }, timeoutMs);
-      ws.addEventListener('message', onMessage);
+      pending.set(id, { method, resolve, reject, timer });
       ws.send(JSON.stringify({ id, method, params }));
     });
   };
+  const events: CdpEvents = {
+    on: (method, handler) => {
+      eventHandlers.set(method, [
+        ...(eventHandlers.get(method) ?? []),
+        handler,
+      ]);
+    },
+  };
   try {
-    return await fn(send);
+    return await fn(send, events);
   } finally {
+    ws.removeEventListener('message', onMessage);
+    pending.forEach((command) => clearTimeout(command.timer));
     ws.close();
   }
 };
@@ -139,32 +187,37 @@ interface EvaluateResult {
 }
 
 /**
+ * Evaluate a JS expression through an already-open `send`. Playwright-parity:
+ * when the expression evaluates to a function (a function-source string like
+ * "() => ..."), it is invoked and the call's result is returned instead —
+ * decided by the runtime type CDP reports, not by guessing at the source
+ * text (IIFE-safe). Shared by one-shot evaluate and the batch runner.
+ */
+export const evaluateViaSend = async (
+  send: CdpSend,
+  expression: string,
+): Promise<unknown> => {
+  const first = (await send('Runtime.evaluate', {
+    expression,
+    returnByValue: true,
+    awaitPromise: true,
+  })) as EvaluateResult;
+  if (first.result?.type !== 'function') return first.result?.value;
+  const invoked = (await send('Runtime.evaluate', {
+    expression: `(${expression})()`,
+    returnByValue: true,
+    awaitPromise: true,
+  })) as EvaluateResult;
+  return invoked.result?.value;
+};
+
+/**
  * Run a JS expression in the target's page (awaits promises) and return its
- * serialized value. Playwright-parity: when the expression evaluates to a
- * function (a function-source string like "() => ..."), it is invoked and
- * the call's result is returned instead — decided by the runtime type CDP
- * reports, not by guessing at the source text (IIFE-safe).
+ * serialized value over the target's own WebSocket.
  */
 export const evaluateOverWs = (
   wsUrl: string,
   expression: string,
   timeoutMs: number = 30_000,
 ): Promise<unknown> =>
-  withTargetWs(
-    wsUrl,
-    async (send) => {
-      const first = (await send('Runtime.evaluate', {
-        expression,
-        returnByValue: true,
-        awaitPromise: true,
-      })) as EvaluateResult;
-      if (first.result?.type !== 'function') return first.result?.value;
-      const invoked = (await send('Runtime.evaluate', {
-        expression: `(${expression})()`,
-        returnByValue: true,
-        awaitPromise: true,
-      })) as EvaluateResult;
-      return invoked.result?.value;
-    },
-    timeoutMs,
-  );
+  withTargetWs(wsUrl, (send) => evaluateViaSend(send, expression), timeoutMs);

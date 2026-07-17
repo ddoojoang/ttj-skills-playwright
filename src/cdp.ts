@@ -14,6 +14,9 @@ import {
   isWsConnectError,
   evaluateOverWs,
 } from './cdp-ws.js';
+import type { BatchStep, BatchStepResult } from './types.js';
+
+export type { BatchStep, BatchStepResult } from './types.js';
 
 /**
  * Minimal GET against Chrome's local CDP HTTP endpoints (/json/list,
@@ -323,33 +326,43 @@ export const waitInActivePage = (
   });
 
 /**
- * One step of a `batch` run. `cmd` picks the action; the other fields are
- * that action's arguments (validated at execution time).
+ * Fill an element instantly (playwright's fill: trusted input event, no
+ * per-key delay). Fallback path for `fill` when the WS route is unavailable.
  */
-export interface BatchStep {
-  readonly cmd: 'goto' | 'click' | 'type' | 'wait' | 'eval' | 'screenshot';
-  readonly url?: string;
-  readonly selector?: string;
-  readonly text?: string;
-  readonly code?: string;
-  readonly path?: string;
-  readonly timeout?: number;
-  readonly full?: boolean;
-}
+export const fillInActivePage = (
+  port: number,
+  selector: string,
+  text: string,
+): Promise<void> =>
+  withActivePage(port, (page) =>
+    page.fill(selector, text, { timeout: ACTION_TIMEOUT_MS }),
+  );
 
-export interface BatchStepResult {
-  readonly step: number;
-  readonly cmd: string;
-  readonly ok: boolean;
-  readonly result?: unknown;
-  readonly error?: string;
-}
+/**
+ * Press a keyboard key on the focused element. Fallback path for `press`.
+ */
+export const pressInActivePage = (port: number, key: string): Promise<void> =>
+  withActivePage(port, (page) => page.keyboard.press(key));
 
 const requireField = (value: string | undefined, name: string): string => {
   if (value === undefined || value === '') {
     throw new Error(`missing required field "${name}"`);
   }
   return value;
+};
+
+/**
+ * The playwright runner cannot resolve snapshot refs (e5) — those need the
+ * WS runner (Node 22+). Fail loudly instead of clicking a bogus selector.
+ */
+const requireRealSelector = (step: BatchStep): string => {
+  const selector = step.ref ?? requireField(step.selector, 'selector');
+  if (/^e\d+$/.test(selector)) {
+    throw new Error(
+      `Ref actions (${selector}) need Node 22+ (WS runner); use a CSS selector or upgrade Node`,
+    );
+  }
+  return selector;
 };
 
 const WAIT_TIMEOUT_MS = 10_000;
@@ -364,7 +377,7 @@ const BATCH_HANDLERS: Record<
   },
   click: (page, step) =>
     page
-      .click(requireField(step.selector, 'selector'), {
+      .click(requireRealSelector(step), {
         timeout: step.timeout ?? ACTION_TIMEOUT_MS,
       })
       .then(() => 'clicked'),
@@ -385,6 +398,19 @@ const BATCH_HANDLERS: Record<
     const outputPath = requireField(step.path, 'path');
     await page.screenshot({ path: outputPath, fullPage: step.full === true });
     return outputPath;
+  },
+  fill: (page, step) =>
+    page
+      .fill(requireRealSelector(step), requireField(step.text, 'text'), {
+        timeout: step.timeout ?? ACTION_TIMEOUT_MS,
+      })
+      .then(() => 'filled'),
+  press: (page, step) =>
+    page.keyboard.press(requireField(step.key, 'key')).then(() => 'pressed'),
+  snapshot: () => {
+    throw new Error(
+      "snapshot in batch requires Node 22+ (WS runner); run 'ttj-skills-playwright snapshot' separately for the refless fallback",
+    );
   },
 };
 
