@@ -18,7 +18,7 @@ import {
 import { detectChrome, ensureProfile } from './detector.js';
 import {
   launchBrowser,
-  autoUpdateIfNeeded,
+  updateToLatestBeforeLaunch,
   verifyBrowserReady,
   visualizePageReferences,
   detectExistingBrowser,
@@ -46,6 +46,7 @@ import {
   clickInActiveTabWs,
   fillInActiveTabWs,
   pressInActiveTabWs,
+  typeInActiveTabWs,
 } from './input-ws.js';
 import { snapshotActiveTab } from './snapshot.js';
 import { runBatchOverWs } from './batch.js';
@@ -70,9 +71,9 @@ Commands:
   goto <url>               Navigate the active tab and wait for load
   snapshot [--depth N]     ARIA snapshot → file (compact tree + refs e1, e2, …)
   click <ref|selector>     Click an element (real/trusted mouse event) — accepts e5 or CSS
-  fill <ref|selector> <text>  Set a field instantly (trusted input event, no key delay)
+  type <ref|selector> <text>  Type like a human (random 100–300ms/key) — DEFAULT for text entry
+  fill <ref|selector> <text>  Set a field instantly (no key delay) — only when explicitly wanted
   press <key>              Press a key on the focused element (Enter, Tab, ArrowDown, …)
-  type <selector> <text>   Type with human-like random keystroke delays (bot-detection etiquette)
   wait <selector> [ms]     Wait for a selector to appear (default 10000ms)
   console [--watch N]      Print the tab's console messages (buffered replay + N live seconds)
   tabs                     List open tabs with indexes
@@ -99,9 +100,9 @@ Examples:
   $ ttj-skills-playwright analyze      # Red boxes + JSON of crawlable structure
   $ ttj-skills-playwright analyze --full  # Slower: auto-scroll whole page first
   $ ttj-skills-playwright snapshot     # Page → compact ref tree file (read it, then act by ref)
-  $ ttj-skills-playwright fill e5 "user@mail.com"   # Instant fill by snapshot ref
+  $ ttj-skills-playwright type e5 "user@mail.com"   # Human-like typing by snapshot ref
   $ ttj-skills-playwright press Enter
-  $ ttj-skills-playwright batch '[{"cmd":"goto","url":"https://site.com/login"},{"cmd":"snapshot"},{"cmd":"fill","ref":"e5","text":"user"},{"cmd":"press","key":"Enter"}]'
+  $ ttj-skills-playwright batch '[{"cmd":"goto","url":"https://site.com/login"},{"cmd":"snapshot"},{"cmd":"type","ref":"e5","text":"user"},{"cmd":"press","key":"Enter"}]'
 `;
 
 /**
@@ -202,10 +203,10 @@ const reuseExistingBrowser = async (
 const main = async (): Promise<void> => {
   log('🚀 Initializing ttj-skills-playwright...', 'info');
 
-  // 0. 업데이트 확인은 브라우저 감지와 '동시에' 시작하고 마지막에만 기다린다.
-  //    실제 npm install은 detached 백그라운드로 돌아 실행을 절대 막지 않는다
-  //    (새 버전은 다음 실행부터 적용).
-  const updatePromise = autoUpdateIfNeeded();
+  // 0. 스킬 발동 계약: 브라우저를 열기 전에 항상 최신 버전을 확인하고,
+  //    있으면 업데이트를 '끝낸 뒤' 진행한다 (레지스트리 확인 1.5s 하드
+  //    타임아웃 + 설치 90s 상한, 실패 시 현재 버전으로 계속 — fail-open).
+  await updateToLatestBeforeLaunch();
 
   const profilePath = getProfilePath();
 
@@ -216,7 +217,6 @@ const main = async (): Promise<void> => {
   if (probedPort !== undefined) {
     log('✅ Existing browser detected', 'success');
     await reuseExistingBrowser(probedPort, profilePath);
-    await updatePromise;
     return;
   }
 
@@ -227,7 +227,6 @@ const main = async (): Promise<void> => {
   if (existing.found && existing.port !== undefined) {
     log('✅ Existing browser detected (process scan)', 'success');
     await reuseExistingBrowser(existing.port, profilePath, existing.pid);
-    await updatePromise;
     return;
   }
 
@@ -276,7 +275,6 @@ const main = async (): Promise<void> => {
       // 조용히 실패 - 검증은 best-effort
     });
 
-  await updatePromise;
 };
 
 const DEFAULT_SCREENSHOT_PATH = path.join(tmpdir(), 'ttj-screenshot.png');
@@ -527,18 +525,31 @@ const runConsole = async (args: readonly string[]): Promise<void> => {
 };
 
 /**
- * `type <selector> <text>` — type with human-like random keystroke delays.
+ * `type <ref|selector> <text>` — type with human-like random keystroke
+ * delays (the DEFAULT for entering text). WS fast connection, human-paced
+ * keystrokes; playwright fallback for CSS selectors.
  */
 const runType = async (
   selector: string | undefined,
   text: string | undefined,
 ): Promise<void> => {
   if (!selector || text === undefined) {
-    usageError('Pass a selector and text. e.g. ttj-skills-playwright type "#query" "hello"');
+    usageError('Pass a ref/selector and text. e.g. ttj-skills-playwright type e8 "hello"  |  type "#query" "hello"');
     return;
   }
   const port = await resolveRunningPort();
   if (port === undefined) return;
+  if (rejectRefWithoutWs(selector)) return;
+  const target = parseActionTarget(selector);
+  if (hasNativeWebSocket()) {
+    try {
+      await typeInActiveTabWs(port, target, text);
+      log(`✅ Typed: ${selector} (${[...text].length} chars)`, 'success');
+      return;
+    } catch (error) {
+      if (target.kind === 'ref' || !isWsConnectError(error)) throw error;
+    }
+  }
   await typeInActivePage(port, selector, text);
   log(`✅ Typed: ${selector} (${[...text].length} chars)`, 'success');
 };
@@ -640,17 +651,14 @@ const parseBatchSteps = (json: string): BatchStep[] | undefined => {
 
 /**
  * Route a batch to the right runner. WS runner (one per-tab socket, refs,
- * hard timeouts) whenever possible; playwright runner for `type` steps
- * (per-key human delay with real key events) and Node <22, with the usual
- * socket-failure fallback.
+ * hard timeouts) whenever possible; playwright runner on Node <22, with the
+ * usual socket-failure fallback.
  */
 const runBatchSmart = async (
   port: number,
   steps: readonly BatchStep[],
 ): Promise<BatchStepResult[]> => {
-  const needsPlaywright =
-    !hasNativeWebSocket() || steps.some((step) => step.cmd === 'type');
-  if (!needsPlaywright) {
+  if (hasNativeWebSocket()) {
     try {
       return await runBatchOverWs(port, steps);
     } catch (error) {

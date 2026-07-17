@@ -235,62 +235,65 @@ export const checkForUpdates = async (): Promise<VersionInfo> => {
   return { current, latest, hasUpdate: isNewer(latest, current) };
 };
 
-/**
- * Auto-update to the latest version when one is available.
- * Best-effort: any failure is swallowed so the user keeps the current version.
- */
-const UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const NPM_INSTALL_TIMEOUT_MS = 90_000;
 
 /**
- * Side effect: read the epoch-ms timestamp of the last update check
- * (0 when the stamp file is missing or unreadable).
+ * Install a specific published version into the global prefix, waiting for
+ * completion. `--prefer-online` revalidates npm's cached packument — right
+ * after a publish the cache can still say the new version "doesn't exist".
+ * Bounded by NPM_INSTALL_TIMEOUT_MS so a hung npm can never wedge activation.
  */
-const readLastUpdateCheck = async (stampPath: string): Promise<number> => {
+const installGlobalVersion = (version: string): Promise<void> =>
+  new Promise((resolve, reject) => {
+    const npmCmd = getOsType() === 'windows' ? 'npm.cmd' : 'npm';
+    const child = spawn(
+      npmCmd,
+      ['install', '-g', `ttj-skills-playwright@${version}`, '--prefer-online'],
+      {
+        stdio: 'ignore',
+        windowsHide: true,
+        shell: getOsType() === 'windows',
+      },
+    );
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error(`npm install timeout (${NPM_INSTALL_TIMEOUT_MS / 1000}s)`));
+    }, NPM_INSTALL_TIMEOUT_MS);
+    child.once('error', (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    child.once('exit', (code) => {
+      clearTimeout(timer);
+      return code === 0
+        ? resolve()
+        : reject(new Error(`npm install exited with code ${code}`));
+    });
+  });
+
+/**
+ * Skill-activation contract: the bare command ALWAYS checks npm for the
+ * latest version and, when one exists, finishes the global update BEFORE the
+ * browser opens (this run keeps executing in-process; every subsequent
+ * command runs the new version). Bounded and fail-open: the registry check
+ * has a 1.5s hard timeout and the install is capped at 90s — any failure
+ * logs a warning and continues on the current version.
+ */
+export const updateToLatestBeforeLaunch = async (): Promise<void> => {
   try {
-    const raw = await readFile(stampPath, 'utf-8');
-    const parsed = Number(raw.trim());
-    return Number.isFinite(parsed) ? parsed : 0;
-  } catch {
-    return 0;
-  }
-};
-
-export const autoUpdateIfNeeded = async (): Promise<void> => {
-  try {
-    // Throttle: hit the npm registry at most once a day so every other
-    // launch starts instantly.
-    const profilePath = getProfilePath();
-    const stampPath = path.join(profilePath, '.last-update-check');
-    const lastChecked = await readLastUpdateCheck(stampPath);
-    if (Date.now() - lastChecked < UPDATE_CHECK_INTERVAL_MS) return;
-
-    await mkdir(profilePath, { recursive: true });
-    await writeFile(stampPath, String(Date.now()), 'utf-8');
-
     const versionInfo = await checkForUpdates();
-    if (versionInfo.hasUpdate) {
-      // Never block the CLI on npm: run the install fully detached in the
-      // background. The new version applies from the NEXT run — this run
-      // proceeds immediately on the current version.
-      const npmCmd = getOsType() === 'windows' ? 'npm.cmd' : 'npm';
-      const child = spawn(
-        npmCmd,
-        ['install', '-g', 'ttj-skills-playwright@latest'],
-        {
-          detached: true,
-          stdio: 'ignore',
-          windowsHide: true,
-          shell: getOsType() === 'windows',
-        },
-      );
-      child.unref();
-      log(
-        `🔄 새 버전 발견 (${versionInfo.current} → ${versionInfo.latest}) — 백그라운드에서 업데이트 중, 다음 실행부터 적용됩니다`,
-        'info',
-      );
-    }
+    if (!versionInfo.hasUpdate) return;
+    log(
+      `⬆️ 새 버전 발견 (v${versionInfo.current} → v${versionInfo.latest}) — 업데이트 후 브라우저를 엽니다...`,
+      'info',
+    );
+    await installGlobalVersion(versionInfo.latest);
+    log(
+      `✅ v${versionInfo.latest} 업데이트 완료 — 이후 명령부터 새 버전으로 실행됩니다`,
+      'success',
+    );
   } catch {
-    // Update failure is ignored; the user continues on the current version.
+    log('업데이트 확인/설치 실패 — 현재 버전으로 계속합니다', 'warning');
   }
 };
 

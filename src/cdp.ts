@@ -384,7 +384,7 @@ const BATCH_HANDLERS: Record<
   type: (page, step) =>
     typeIntoPage(
       page,
-      requireField(step.selector, 'selector'),
+      requireRealSelector(step),
       requireField(step.text, 'text'),
     ).then(() => 'typed'),
   wait: (page, step) =>

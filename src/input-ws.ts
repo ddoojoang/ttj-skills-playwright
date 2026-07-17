@@ -263,6 +263,53 @@ export const pressKeyViaSend = async (
   await send('Input.dispatchKeyEvent', { ...base, type: 'keyUp' });
 };
 
+/** Human-like per-keystroke delay: 100–300ms (bot-detection etiquette). */
+const humanTypeDelay = (): number => 100 + Math.random() * 200;
+
+const isPrintableAscii = (char: string): boolean =>
+  char.length === 1 && char >= ' ' && char <= '~';
+
+/**
+ * Type ONE character with real key events (keyDown carrying text + keyUp) so
+ * per-key listeners fire — matching what a human keystroke produces. Non-ASCII
+ * characters (한글, emoji, …) go through Input.insertText per char, the same
+ * fallback puppeteer/playwright use for keys without a physical definition.
+ */
+const typeCharViaSend = async (send: CdpSend, char: string): Promise<void> => {
+  if (!isPrintableAscii(char)) {
+    await send('Input.insertText', { text: char });
+    return;
+  }
+  const keyCode = char.toUpperCase().charCodeAt(0);
+  const base = {
+    key: char,
+    windowsVirtualKeyCode: keyCode,
+    nativeVirtualKeyCode: keyCode,
+  };
+  await send('Input.dispatchKeyEvent', { ...base, type: 'keyDown', text: char });
+  await send('Input.dispatchKeyEvent', { ...base, type: 'keyUp' });
+};
+
+/**
+ * Type into a resolved node like a human: real click to focus, then one
+ * character at a time with a randomized 100–300ms delay. This is the DEFAULT
+ * for entering text — speed optimizations belong to logic (snapshot/refs/
+ * detection), never to typing cadence.
+ */
+export const typeNodeViaSend = async (
+  send: CdpSend,
+  handle: NodeHandle,
+  label: string,
+  text: string,
+): Promise<void> => {
+  await clickNodeViaSend(send, handle, label);
+  await [...text].reduce(async (prev, char) => {
+    await prev;
+    await typeCharViaSend(send, char);
+    await sleep(humanTypeDelay());
+  }, Promise.resolve());
+};
+
 /** Poll until a selector exists in the document (batch `wait` step). */
 export const waitForSelectorViaSend = async (
   send: CdpSend,
@@ -327,3 +374,18 @@ export const fillInActiveTabWs = (
 /** One-shot WS key press on the active tab's focused element. */
 export const pressInActiveTabWs = (port: number, key: string): Promise<void> =>
   withActiveTabAction(port, (send) => pressKeyViaSend(send, key));
+
+/** One-shot WS human-like typing into a ref or CSS selector. */
+export const typeInActiveTabWs = (
+  port: number,
+  target: ActionTarget,
+  text: string,
+): Promise<void> =>
+  withActiveTabAction(port, async (send, refEntry, url) => {
+    const handle = await resolveNodeViaSend(send, target, refEntry, url);
+    await typeNodeViaSend(send, handle, describeTarget(target), text).catch(
+      (error) => {
+        throw translateNodeError(error, target);
+      },
+    );
+  });

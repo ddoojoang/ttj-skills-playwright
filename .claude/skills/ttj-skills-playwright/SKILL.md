@@ -38,7 +38,7 @@ Launches a dedicated Chrome (CDP port 9227, fixed profile `~/.ttj-skills-playwri
 
 ## 🚨 Skill start ritual: check 9227 first, then report tabs and ASK
 
-When the skill is activated, always start with the bare command `ttj-skills-playwright` (no subcommand). It checks the dedicated ttj profile browser on CDP port 9227 (probing the port even when process detection misses): if none is running it launches one; if one is already running — e.g. left open by a previous session — it **reuses it and never opens a new tab**, brings the window to the front, and prints the open tabs to stdout (`▶ [n] title — url`), ending with `✅ Reused the existing browser — no new tab was opened`.
+When the skill is activated, always start with the bare command `ttj-skills-playwright` (no subcommand). **It first checks npm for the latest version and, when one exists, finishes updating itself BEFORE opening the browser** (you may see `⬆️ 새 버전 발견 … 업데이트 후 브라우저를 엽니다` — let it finish; it's bounded at 90s and continues on the current version if the update fails). Then it checks the dedicated ttj profile browser on CDP port 9227 (probing the port even when process detection misses): if none is running it launches one; if one is already running — e.g. left open by a previous session — it **reuses it and never opens a new tab**, brings the window to the front, and prints the open tabs to stdout (`▶ [n] title — url`), ending with `✅ Reused the existing browser — no new tab was opened`.
 
 When you see that reuse output:
 
@@ -63,9 +63,9 @@ When you see that reuse output:
 | Run JS / read DOM / change styles | `ttj-skills-playwright eval "<js>"` |
 | Navigate (waits for load) | `ttj-skills-playwright goto <url>` |
 | Click (real trusted mouse event) | `ttj-skills-playwright click e5` or `click "<selector>"` |
-| Fill a field instantly (login forms) | `ttj-skills-playwright fill e5 "<text>"` or `fill "<selector>" "<text>"` |
+| Type text (human-like, DEFAULT for input) | `ttj-skills-playwright type e5 "<text>"` or `type "<selector>" "<text>"` |
 | Press a key (Enter, Tab, ArrowDown, …) | `ttj-skills-playwright press Enter` |
-| Type (human-like random delay) | `ttj-skills-playwright type "<selector>" "<text>"` |
+| Fill instantly (ONLY on explicit request) | `ttj-skills-playwright fill e5 "<text>"` |
 | Wait for an element (SPA / lazy) | `ttj-skills-playwright wait "<selector>" [timeoutMs]` |
 | Read console messages | `ttj-skills-playwright console [--watch <sec>]` |
 | List / switch tabs | `ttj-skills-playwright tabs` / `ttj-skills-playwright tab <n>` |
@@ -93,12 +93,12 @@ When you need to interact with a page whose structure you don't know (login form
 
 1. Run `ttj-skills-playwright snapshot` (~0.1s). stdout stays tiny — URL, title, and a **file path**. The page's ARIA tree (`- textbox "Password" [ref=e10]`) is in that file.
 2. **Read the snapshot file** (or grep it for the element you need) — this is far cheaper than screenshots or DOM dumps.
-3. Act directly by ref: `ttj-skills-playwright fill e8 "user@mail.com"`, `click e12`, `press Enter`. No CSS selector guessing.
+3. Act directly by ref: `ttj-skills-playwright type e8 "user@mail.com"`, `click e12`, `press Enter`. No CSS selector guessing.
 4. **Refs die on navigation** — after any `goto`/link click/form submit, run `snapshot` again before using refs. A stale ref fails with a clear "Run 'snapshot' again" error (never a wrong-element click).
 
-**fill vs type — choose deliberately:**
-- `fill` = instant (one trusted `input` event, React/Vue-safe). **Default for login forms and search boxes** — a 20-char login takes ~0.1s instead of ~4s.
-- `type` = per-character 100–300ms random delay with real keydown/keyup events. Use it only when the site does bot detection or listens to individual keystrokes (autocomplete that reacts per key).
+**type vs fill — typing is ALWAYS human-like by default:**
+- `type` = per-character 100–300ms random delay with real keydown/keyup events, like a human. **This is the DEFAULT for ALL text entry — logins, search boxes, forms.** Works with refs too: `type e8 "user@mail.com"`. Speed optimizations apply to LOGIC (snapshot, refs, detection, connection) — never to typing cadence.
+- `fill` = instant (one trusted `input` event, no per-key events). Use ONLY when the user explicitly asks for instant input, or to clear a field (`fill e8 ""`). Never pick `fill` on your own for login/credential fields.
 
 **Two ref systems, don't confuse them:** snapshot refs are `e1, e2, …` (machine contract — usable in `click`/`fill`). Visualization badges on screen are `v1, v2, …` (human-facing — the user clicks a badge to copy a CSS selector; `vN` is NOT a command argument).
 
@@ -106,17 +106,17 @@ When you need to interact with a page whose structure you don't know (login form
 
 Running each action as a separate Bash tool call wastes seconds of round-trip per step. When you already know the next 2+ actions:
 
-1. **Preferred — `batch`**: one process + ONE CDP connection for the whole sequence. Steps run in order; on the first failure the remaining steps are skipped and reported. stdout = JSON results array (parse it; non-zero exit = some step failed). The flagship login flow — navigate, map, fill by ref, submit — in ONE call:
+1. **Preferred — `batch`**: one process + ONE CDP connection for the whole sequence. Steps run in order; on the first failure the remaining steps are skipped and reported. stdout = JSON results array (parse it; non-zero exit = some step failed). The flagship login flow — navigate, map, type by ref (human-paced), submit — in ONE call:
 ```bash
 ttj-skills-playwright batch '[
   {"cmd":"goto","url":"https://site.com/login"},
   {"cmd":"snapshot"},
-  {"cmd":"fill","ref":"e8","text":"myuser"},
-  {"cmd":"fill","ref":"e10","text":"mypass"},
+  {"cmd":"type","ref":"e8","text":"myuser"},
+  {"cmd":"type","ref":"e10","text":"mypass"},
   {"cmd":"press","key":"Enter"}
 ]'
 ```
-Step fields: `goto{url}` · `snapshot{}` (refreshes refs mid-batch) · `click{selector|ref,timeout?}` · `fill{selector|ref,text}` · `press{key}` · `type{selector,text}` · `wait{selector,timeout?}` · `eval{code}` · `screenshot{path,full?}`. A `goto` step invalidates refs — put a `snapshot` step after it before any ref step. If the refs aren't known yet, run `snapshot` alone first, read the file, then batch the actions.
+Step fields: `goto{url}` · `snapshot{}` (refreshes refs mid-batch) · `click{selector|ref,timeout?}` · `type{selector|ref,text}` · `fill{selector|ref,text}` (explicit request only) · `press{key}` · `wait{selector,timeout?}` · `eval{code}` · `screenshot{path,full?}`. A `goto` step invalidates refs — put a `snapshot` step after it before any ref step. If the refs aren't known yet, run `snapshot` alone first, read the file, then batch the actions. `type` keeps its human keystroke cadence inside batch — batch saves the connection/process overhead, not the typing time.
 2. **Fallback — `&&` chaining** for mixes batch can't express (e.g. `tab 2 && … --visualize`): `ttj-skills-playwright tab 2 && ttj-skills-playwright eval "document.title"`.
 
 Use single one-shot commands only when the next action genuinely depends on output you must reason about first.
@@ -164,13 +164,14 @@ ttj-skills-playwright snapshot --depth 6      # cap tree depth on huge pages
 grep -i "textbox\|button" ~/.ttj-skills-playwright/snapshots/<targetId>.txt
 ```
 
-### click / fill / press / type — real input events
+### click / type / press / fill — real input events
 ```bash
 ttj-skills-playwright click e12               # by snapshot ref (exact element, no guessing)
 ttj-skills-playwright click "#login-btn"      # or by CSS selector
-ttj-skills-playwright fill e8 "user@mail.com" # instant fill (login default, ~0.1s)
+ttj-skills-playwright type e8 "user@mail.com" # human-like typing (DEFAULT for all text entry)
+ttj-skills-playwright type "#query" "search text"
 ttj-skills-playwright press Enter             # submit without hunting for the button
-ttj-skills-playwright type "#query" "search text"   # per-key human delay (bot-detection sites)
+ttj-skills-playwright fill e8 ""              # clear a field; instant fill ONLY on explicit request
 ```
 
 ### console — page console messages (debugging)

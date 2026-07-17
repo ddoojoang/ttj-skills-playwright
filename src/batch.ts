@@ -5,11 +5,9 @@
  * ONE per-tab CDP WebSocket (no playwright load, no attach to other tabs).
  * Ref lifecycle invariant: a `goto` step invalidates refs (document replaced
  * → backendNodeIds die); a `snapshot` step refreshes both the in-memory map
- * and the persisted files, so `[goto → snapshot → fill e5 → press Enter]` is
- * a valid single-call login flow.
- *
- * `type` steps (per-key human delay with real key events) stay on the
- * playwright runner — cli.ts routes any batch containing `type` there.
+ * and the persisted files, so `[goto → snapshot → type e5 → press Enter]` is
+ * a valid single-call login flow. `type` keeps its human keystroke cadence
+ * (100–300ms/key) even here — only the CONNECTION is fast, never the typing.
  */
 
 import { writeFile } from 'fs/promises';
@@ -28,6 +26,7 @@ import {
   clickNodeViaSend,
   fillNodeViaSend,
   pressKeyViaSend,
+  typeNodeViaSend,
   waitForSelectorViaSend,
 } from './input-ws.js';
 import { captureSnapshotViaSend, persistSnapshot } from './snapshot.js';
@@ -162,9 +161,20 @@ const runStep = async (
     return { file: filePath, refs: capture.refCount, lines: capture.lineCount };
   }
   if (step.cmd === 'type') {
-    throw new Error(
-      'type steps run via the playwright runner — this should not happen (report a bug)',
+    const target = parseActionTarget(actionTargetOf(step));
+    const handle = await resolveNodeViaSend(
+      send,
+      target,
+      state.refEntry,
+      await liveUrl(send),
     );
+    await typeNodeViaSend(
+      send,
+      handle,
+      target.kind === 'ref' ? target.ref : target.selector,
+      requireField(step.text, 'text'),
+    );
+    return 'typed';
   }
   throw new Error(
     `unknown cmd "${String(step.cmd)}" (goto|click|type|wait|eval|screenshot|fill|press|snapshot)`,
