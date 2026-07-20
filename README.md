@@ -2,6 +2,8 @@
 
 > A CLI that drives an existing Chrome over CDP (Playwright core) with instant one-shot commands.
 
+🌐 [ttj.kr](https://ttj.kr)
+
 Built so an AI agent (Claude Code, Codex) and the user can **work on the same browser screen**.
 It attaches to a running Chrome over the Chrome DevTools Protocol — evaluate-class commands talk to
 the active tab over its own dedicated WebSocket (no session management, no attach to other tabs), so
