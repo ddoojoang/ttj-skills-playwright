@@ -35,3 +35,4 @@ docs/
 AI-AGENT-ASK/
 .playwright-cli/
 .claude/docs/
+.git-local/
