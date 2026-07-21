@@ -204,40 +204,149 @@ interface KeyDef {
   readonly key: string;
   readonly code: string;
   readonly keyCode: number;
+  readonly shift: boolean;
   readonly text?: string;
 }
 
-const KEY_DEFS: Readonly<Record<string, KeyDef>> = {
-  Enter: { key: 'Enter', code: 'Enter', keyCode: 13, text: '\r' },
-  Tab: { key: 'Tab', code: 'Tab', keyCode: 9 },
-  Escape: { key: 'Escape', code: 'Escape', keyCode: 27 },
-  Backspace: { key: 'Backspace', code: 'Backspace', keyCode: 8 },
-  Delete: { key: 'Delete', code: 'Delete', keyCode: 46 },
-  ArrowUp: { key: 'ArrowUp', code: 'ArrowUp', keyCode: 38 },
-  ArrowDown: { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40 },
-  ArrowLeft: { key: 'ArrowLeft', code: 'ArrowLeft', keyCode: 37 },
-  ArrowRight: { key: 'ArrowRight', code: 'ArrowRight', keyCode: 39 },
-  Home: { key: 'Home', code: 'Home', keyCode: 36 },
-  End: { key: 'End', code: 'End', keyCode: 35 },
-  PageUp: { key: 'PageUp', code: 'PageUp', keyCode: 33 },
-  PageDown: { key: 'PageDown', code: 'PageDown', keyCode: 34 },
-  Space: { key: ' ', code: 'Space', keyCode: 32, text: ' ' },
+/**
+ * US-layout physical key table: printable char -> the exact event a real
+ * keyboard produces for it. `type` and `press` share this one source of truth.
+ *
+ * Why it must exist: `char.charCodeAt(0)` is NOT a virtual key code. Deriving
+ * keyCode that way emits impossible events — "." carried keyCode 46 (VK_DELETE)
+ * and Chrome swallowed the character as a Delete keypress, "#" carried 35
+ * (VK_END), "'" carried 39 (VK_RIGHT). Omitting `code` was equally impossible:
+ * a hardware keystroke never reports code:"" (isTrusted stays true either way,
+ * so code:"" is a pure automation signature). Shifted characters also need a
+ * real Shift keydown/keyup around them, otherwise the page sees an uppercase
+ * character arriving with shiftKey:false.
+ */
+const LETTERS = 'abcdefghijklmnopqrstuvwxyz';
+const DIGITS = '0123456789';
+/** Index = the digit key that produces this char with Shift held. */
+const SHIFTED_DIGITS = ')!@#$%^&*(';
+
+/** [unshifted, shifted, code, keyCode] for US-layout punctuation keys. */
+const PUNCT_KEYS: ReadonlyArray<readonly [string, string, string, number]> = [
+  [';', ':', 'Semicolon', 186],
+  ['=', '+', 'Equal', 187],
+  [',', '<', 'Comma', 188],
+  ['-', '_', 'Minus', 189],
+  ['.', '>', 'Period', 190],
+  ['/', '?', 'Slash', 191],
+  ['`', '~', 'Backquote', 192],
+  ['[', '{', 'BracketLeft', 219],
+  ['\\', '|', 'Backslash', 220],
+  [']', '}', 'BracketRight', 221],
+  ["'", '"', 'Quote', 222],
+];
+
+const charEntry = (
+  char: string,
+  code: string,
+  keyCode: number,
+  shift: boolean,
+): readonly [string, KeyDef] => [
+  char,
+  { key: char, code, keyCode, shift, text: char },
+];
+
+/** Every printable ASCII character mapped to its physical key. */
+const CHAR_KEYS: Readonly<Record<string, KeyDef>> = Object.fromEntries([
+  ...[...LETTERS].map((c) =>
+    charEntry(c, `Key${c.toUpperCase()}`, c.toUpperCase().charCodeAt(0), false),
+  ),
+  ...[...LETTERS].map((c) =>
+    charEntry(
+      c.toUpperCase(),
+      `Key${c.toUpperCase()}`,
+      c.toUpperCase().charCodeAt(0),
+      true,
+    ),
+  ),
+  ...[...DIGITS].map((d) => charEntry(d, `Digit${d}`, d.charCodeAt(0), false)),
+  ...[...SHIFTED_DIGITS].map((c, i) =>
+    charEntry(c, `Digit${DIGITS[i]}`, DIGITS[i].charCodeAt(0), true),
+  ),
+  ...PUNCT_KEYS.flatMap(([plain, shifted, code, keyCode]) => [
+    charEntry(plain, code, keyCode, false),
+    charEntry(shifted, code, keyCode, true),
+  ]),
+  charEntry(' ', 'Space', 32, false),
+]);
+
+const NAMED_KEYS: Readonly<Record<string, KeyDef>> = {
+  Enter: { key: 'Enter', code: 'Enter', keyCode: 13, shift: false, text: '\r' },
+  Tab: { key: 'Tab', code: 'Tab', keyCode: 9, shift: false },
+  Escape: { key: 'Escape', code: 'Escape', keyCode: 27, shift: false },
+  Backspace: { key: 'Backspace', code: 'Backspace', keyCode: 8, shift: false },
+  Delete: { key: 'Delete', code: 'Delete', keyCode: 46, shift: false },
+  ArrowUp: { key: 'ArrowUp', code: 'ArrowUp', keyCode: 38, shift: false },
+  ArrowDown: { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40, shift: false },
+  ArrowLeft: { key: 'ArrowLeft', code: 'ArrowLeft', keyCode: 37, shift: false },
+  ArrowRight: { key: 'ArrowRight', code: 'ArrowRight', keyCode: 39, shift: false },
+  Home: { key: 'Home', code: 'Home', keyCode: 36, shift: false },
+  End: { key: 'End', code: 'End', keyCode: 35, shift: false },
+  PageUp: { key: 'PageUp', code: 'PageUp', keyCode: 33, shift: false },
+  PageDown: { key: 'PageDown', code: 'PageDown', keyCode: 34, shift: false },
+  Space: { key: ' ', code: 'Space', keyCode: 32, shift: false, text: ' ' },
 };
 
 const keyDefFor = (key: string): KeyDef | undefined =>
-  KEY_DEFS[key] ??
-  (key.length === 1
-    ? {
-        key,
-        code: `Key${key.toUpperCase()}`,
-        keyCode: key.toUpperCase().charCodeAt(0),
-        text: key,
-      }
-    : undefined);
+  NAMED_KEYS[key] ?? CHAR_KEYS[key];
+
+/** CDP modifier bitmask bit for Shift. */
+const SHIFT_MODIFIER = 8;
+const SHIFT_EVENT = {
+  key: 'Shift',
+  code: 'ShiftLeft',
+  windowsVirtualKeyCode: 16,
+  nativeVirtualKeyCode: 16,
+  location: 1,
+};
+
+/**
+ * Dispatch one key as a human would: optional Shift down, the key itself
+ * (keyDown carrying text so the character commits, rawKeyDown for non-text
+ * keys), keyUp, then Shift up.
+ */
+const dispatchKeyDefViaSend = async (
+  send: CdpSend,
+  def: KeyDef,
+): Promise<void> => {
+  const modifiers = def.shift ? SHIFT_MODIFIER : 0;
+  if (def.shift) {
+    await send('Input.dispatchKeyEvent', {
+      ...SHIFT_EVENT,
+      type: 'rawKeyDown',
+      modifiers: SHIFT_MODIFIER,
+    });
+  }
+  const base = {
+    key: def.key,
+    code: def.code,
+    windowsVirtualKeyCode: def.keyCode,
+    nativeVirtualKeyCode: def.keyCode,
+    modifiers,
+  };
+  await send('Input.dispatchKeyEvent', {
+    ...base,
+    type: def.text !== undefined ? 'keyDown' : 'rawKeyDown',
+    ...(def.text !== undefined ? { text: def.text } : {}),
+  });
+  await send('Input.dispatchKeyEvent', { ...base, type: 'keyUp' });
+  if (def.shift) {
+    await send('Input.dispatchKeyEvent', {
+      ...SHIFT_EVENT,
+      type: 'keyUp',
+      modifiers: 0,
+    });
+  }
+};
 
 /**
  * Press a keyboard key (keyDown + keyUp) on the focused element.
- * Named keys (Enter, Tab, arrows, …) or any single printable character.
+ * Named keys (Enter, Tab, arrows, ...) or any single printable character.
  */
 export const pressKeyViaSend = async (
   send: CdpSend,
@@ -246,48 +355,29 @@ export const pressKeyViaSend = async (
   const def = keyDefFor(key);
   if (!def) {
     throw new Error(
-      `Unsupported key "${key}". Supported: ${Object.keys(KEY_DEFS).join(', ')}, or a single character.`,
+      `Unsupported key "${key}". Supported: ${Object.keys(NAMED_KEYS).join(', ')}, or a single printable character.`,
     );
   }
-  const base = {
-    key: def.key,
-    code: def.code,
-    windowsVirtualKeyCode: def.keyCode,
-    nativeVirtualKeyCode: def.keyCode,
-  };
-  await send('Input.dispatchKeyEvent', {
-    ...base,
-    type: def.text !== undefined ? 'keyDown' : 'rawKeyDown',
-    ...(def.text !== undefined ? { text: def.text } : {}),
-  });
-  await send('Input.dispatchKeyEvent', { ...base, type: 'keyUp' });
+  await dispatchKeyDefViaSend(send, def);
 };
 
-/** Human-like per-keystroke delay: 100–300ms (bot-detection etiquette). */
+/** Human-like per-keystroke delay: 100-300ms (bot-detection etiquette). */
 const humanTypeDelay = (): number => 100 + Math.random() * 200;
 
-const isPrintableAscii = (char: string): boolean =>
-  char.length === 1 && char >= ' ' && char <= '~';
-
 /**
- * Type ONE character with real key events (keyDown carrying text + keyUp) so
- * per-key listeners fire — matching what a human keystroke produces. Non-ASCII
- * characters (한글, emoji, …) go through Input.insertText per char, the same
- * fallback puppeteer/playwright use for keys without a physical definition.
+ * Type ONE character with real key events (Shift + keyDown carrying text +
+ * keyUp) so per-key listeners fire exactly as for a human keystroke. Characters
+ * with no physical US key (한글, emoji, ...) go through `Input.insertText`,
+ * which is what an IME commit produces: a trusted `input` event with no
+ * impossible keydown attached.
  */
 const typeCharViaSend = async (send: CdpSend, char: string): Promise<void> => {
-  if (!isPrintableAscii(char)) {
+  const def = CHAR_KEYS[char];
+  if (!def) {
     await send('Input.insertText', { text: char });
     return;
   }
-  const keyCode = char.toUpperCase().charCodeAt(0);
-  const base = {
-    key: char,
-    windowsVirtualKeyCode: keyCode,
-    nativeVirtualKeyCode: keyCode,
-  };
-  await send('Input.dispatchKeyEvent', { ...base, type: 'keyDown', text: char });
-  await send('Input.dispatchKeyEvent', { ...base, type: 'keyUp' });
+  await dispatchKeyDefViaSend(send, def);
 };
 
 /**
