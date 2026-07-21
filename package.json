@@ -1,6 +1,6 @@
 {
   "name": "ttj-skills-playwright",
-  "version": "1.4.14",
+  "version": "1.4.15",
   "description": "Drive an existing Chrome over CDP (Playwright core) with one-shot commands — eval, goto, click, type, wait, tabs, screenshot — plus page element visualization and crawl-target analysis. Skill for Claude Code & Codex.",
   "type": "module",
   "bin": {
