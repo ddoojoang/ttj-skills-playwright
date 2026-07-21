@@ -156,6 +156,7 @@ ttj-skills-playwright eval "(async () => { await new Promise(r => setTimeout(r, 
 ttj-skills-playwright goto https://example.com
 ttj-skills-playwright goto example.com        # https:// auto-prefixed
 ```
+> **`goto` is for FIRST entry only** (opening the site, address-bar/bookmark case). To follow a link that already exists on the page, **`click` it — do NOT `goto` its href.** A human clicking a link produces a `referrer` (the origin page) and reveals whether it opens in the **same tab or a new tab**; `goto` produces an empty referrer (looks like address-bar entry) and hides the tab behaviour entirely. See "Link navigation" below.
 
 ### snapshot — ARIA tree + refs to a file (map the page before acting)
 ```bash
@@ -198,6 +199,17 @@ ttj-skills-playwright screenshot                      # default path printed in 
 ttj-skills-playwright screenshot /tmp/full.png --full # full page
 ttj-skills-playwright clear                           # remove visualization badges+boxes (no reload)
 ```
+
+### Link navigation — click links, don't `goto` their href (know same-tab vs new-tab)
+To move deeper into a site, **`click` the link** — this is how a human navigates, and it reveals what the link actually does:
+```bash
+ttj-skills-playwright tabs                 # note the tab count BEFORE
+ttj-skills-playwright click e7             # click the link (real trusted mouse)
+ttj-skills-playwright tabs                 # compare the tab count AFTER
+```
+- **Tab count grew (e.g. 1→2)** → the link is `target="_blank"` → opened in a **NEW tab**, which becomes the active tab (`▶`). Every later command now targets the new tab automatically; use `tab <n>` to return. (verified empirically)
+- **Tab count unchanged (1→1)** → **same-tab** navigation; `referrer` carries the previous page (real user trail). Run `snapshot` again to refresh refs.
+- **Why it matters for generated code**: only a real click tells you the same-tab / new-tab behaviour, so the automation can target the right tab afterwards. `goto <href>` can't — empty referrer, no tab signal.
 
 ## Element visualization / analysis (--visualize)
 
@@ -296,6 +308,21 @@ await page.type(selector, text, { delay: randomDelay() });
 const randomWait = () => Math.random() * 1500 + 500;   // element access: 500ms-2s
 await page.waitForTimeout(randomWait());
 ```
+
+**Navigate by CLICKING links, not by `goto`-ing their href — and detect same-tab vs new-tab:**
+Following an on-page link must be a real click, not navigation to its URL. A click carries a `referrer` (natural user trail) and reveals whether the link opens the **same tab** or a **new tab** (`target="_blank"`) — the generated code must know which, so it acts on the right page object afterwards. `goto <href>` sends an empty referrer and hides the tab behaviour. Detect by comparing page count before/after:
+```javascript
+// Puppeteer
+const before = (await browser.pages()).length;
+await link.click();                                   // real trusted click (NOT goto its href)
+const pages = await browser.pages();
+const target = pages.length > before ? pages[pages.length - 1] : page;  // new tab? use it. else same page.
+// `target` is the page every subsequent step must act on.
+
+// Playwright
+const target = context.pages().length > before ? context.pages().at(-1) : page;
+```
+`goto` is legitimate ONLY for FIRST entry (opening the site fresh). Following an on-page link with `goto` is the smell.
 
 **Procedure — do all 3 stages in order. None may be skipped.**
 
